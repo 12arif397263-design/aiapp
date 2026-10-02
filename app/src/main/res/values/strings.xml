@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">OmniVideo AI</string>
+    <string name="unlimited_videos_title">আনলিমিটেড এআই ভিডিও জেনারেটর</string>
+    <string name="generate_button_label">Generate Video</string>
+    <string name="prompt_placeholder">ভিডিওর বর্ণনা লিখুন (e.g., A cinematic drone shot of a futuristic neon city at sunset...)</string>
+</resources>

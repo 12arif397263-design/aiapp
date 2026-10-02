@@ -1,0 +1,6 @@
+{
+  "name": "OmniVideo AI",
+  "description": "Generate unlimited AI videos from text prompts and scripts. Includes cinematic styles, camera motion control, prompt enhancer, real MP4 export, and story studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
