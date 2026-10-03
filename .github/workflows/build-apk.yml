@@ -16,13 +16,14 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up JDK 21
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '21'
         distribution: 'temurin'
 
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v3
+    - name: Accept Android SDK Licenses
+      run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
     - name: Setup debug keystore
       run: |
@@ -33,20 +34,19 @@ jobs:
           keytool -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048
         fi
 
-    - name: Setup Gradle 9.3.1
+    - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
-      with:
-        gradle-version: '9.3.1'
 
     - name: Build Debug APK
       env:
         JAVA_OPTS: "-Djava.awt.headless=true -Dfile.encoding=UTF-8"
         GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false -Djava.awt.headless=true -Xmx4g"
-      run: gradle :app:assembleDebug -x test --no-daemon --no-configuration-cache --stacktrace
+      run: |
+        chmod +x gradlew
+        ./gradlew :app:assembleDebug -x test --no-daemon --no-configuration-cache --stacktrace
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: OmniVideo-AI-APK
         path: app/build/outputs/apk/debug/*.apk
