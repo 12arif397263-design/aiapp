@@ -21,10 +21,16 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
-    - name: Restore debug keystore
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Setup debug keystore
       run: |
         if [ -f debug.keystore.base64 ]; then
           base64 -d debug.keystore.base64 > debug.keystore
+        fi
+        if [ ! -f debug.keystore ]; then
+          keytool -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048
         fi
 
     - name: Setup Gradle 9.3.1
