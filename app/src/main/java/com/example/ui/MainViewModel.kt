@@ -63,12 +63,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val selectedAspectRatio: StateFlow<com.example.data.model.AspectRatioOption> = _selectedAspectRatio.asStateFlow()
 
     private val _selectedModel = MutableStateFlow(
-        VideoPresets.MODELS.find { it.id == repository.getSavedModelId() } ?: VideoPresets.MODELS[1]
+        VideoPresets.MODELS.find { it.id == repository.getSavedModelId() } ?: VideoPresets.MODELS[0]
     )
     val selectedModel: StateFlow<com.example.data.model.AiVideoModelOption> = _selectedModel.asStateFlow()
 
     private val _selectedArchitecture = MutableStateFlow(
-        VideoPresets.ARCHITECTURES.find { it.id == repository.getSavedArchitectureId() } ?: VideoPresets.ARCHITECTURES[1]
+        VideoPresets.ARCHITECTURES.find { it.id == repository.getSavedArchitectureId() } ?: VideoPresets.ARCHITECTURES[0]
     )
     val selectedArchitecture: StateFlow<com.example.data.model.SystemArchitectureOption> = _selectedArchitecture.asStateFlow()
 

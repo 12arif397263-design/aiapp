@@ -55,20 +55,86 @@ data class GeminiErrorDetails(
 
 data class VeoGenerateVideoRequest(
     val prompt: String,
-    val durationSeconds: Int = 4,
-    val aspectRatio: String = "16:9",
-    val fps: Int = 30
+    val durationSeconds: Int? = 8,
+    val aspectRatio: String? = "16:9",
+    val fps: Int? = 24,
+    val videoConfig: VeoVideoConfig? = null
+)
+
+data class VeoVideoConfig(
+    val durationSeconds: Int? = 8,
+    val aspectRatio: String? = "16:9",
+    val fps: Int? = 24
 )
 
 data class VeoOperationResponse(
     val name: String? = null,
     val done: Boolean? = false,
     val response: VeoResult? = null,
-    val error: GeminiErrorDetails? = null
-)
+    val error: GeminiErrorDetails? = null,
+    val metadata: Map<String, Any?>? = null
+) {
+    fun extractVideoUri(): String? {
+        // 1. generateVideoResponse.generatedVideos[0].video.uri / downloadUri
+        response?.generateVideoResponse?.generatedVideos?.firstOrNull()?.video?.let { v ->
+            val uri = v.downloadUri ?: v.uri
+            if (!uri.isNullOrBlank()) return uri
+        }
+        // 2. generatedVideos[0].video.uri / downloadUri
+        response?.generatedVideos?.firstOrNull()?.video?.let { v ->
+            val uri = v.downloadUri ?: v.uri
+            if (!uri.isNullOrBlank()) return uri
+        }
+        // 3. video.uri / downloadUri
+        response?.video?.let { v ->
+            val uri = v.downloadUri ?: v.uri
+            if (!uri.isNullOrBlank()) return uri
+        }
+        // 4. direct videoUri or uri
+        if (!response?.videoUri.isNullOrBlank()) return response?.videoUri
+        if (!response?.uri.isNullOrBlank()) return response?.uri
+
+        // 5. check metadata for videoUri
+        val metaUri = metadata?.get("videoUri") as? String
+        if (!metaUri.isNullOrBlank()) return metaUri
+
+        return null
+    }
+
+    fun extractVideoBase64(): String? {
+        response?.generateVideoResponse?.generatedVideos?.firstOrNull()?.video?.bytesBase64Encoded?.let {
+            if (it.isNotBlank()) return it
+        }
+        response?.generatedVideos?.firstOrNull()?.video?.bytesBase64Encoded?.let {
+            if (it.isNotBlank()) return it
+        }
+        response?.video?.bytesBase64Encoded?.let {
+            if (it.isNotBlank()) return it
+        }
+        return null
+    }
+}
 
 data class VeoResult(
-    val videoUri: String? = null
+    val videoUri: String? = null,
+    val uri: String? = null,
+    val generateVideoResponse: VeoGenerateVideoResponse? = null,
+    val generatedVideos: List<VeoGeneratedVideo>? = null,
+    val video: VeoVideoPayload? = null
+)
+
+data class VeoGenerateVideoResponse(
+    val generatedVideos: List<VeoGeneratedVideo>? = null
+)
+
+data class VeoGeneratedVideo(
+    val video: VeoVideoPayload? = null
+)
+
+data class VeoVideoPayload(
+    val uri: String? = null,
+    val downloadUri: String? = null,
+    val bytesBase64Encoded: String? = null
 )
 
 data class AiVideoPromptAnalysis(
