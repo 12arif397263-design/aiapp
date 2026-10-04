@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
 import com.example.BuildConfig
+import com.example.data.director.AiPromptDirector
 import com.example.data.generator.VideoSynthesizer
 import com.example.data.local.AppDatabase
 import com.example.data.local.VideoProjectEntity
@@ -87,16 +88,17 @@ class VideoRepository(private val context: Context) {
     }
 
     suspend fun enhancePrompt(rawPrompt: String, styleId: String, isBengali: Boolean): String = withContext(Dispatchers.IO) {
+        val directive = AiPromptDirector.analyzeAndDirect(rawPrompt)
         val apiKey = getEffectiveApiKey()
         if (apiKey.isNotBlank()) {
             try {
-                val style = VideoPresets.STYLES.find { it.id == styleId }
-                val systemPrompt = "You are a world-class Hollywood cinematographer and AI video prompt engineer. " +
-                        "Convert this brief user idea into a hyper-detailed cinematic prompt for Veo/Sora. " +
-                        "Include camera motion, lighting (volumetric, anamorphic lens flares), depth of field, color grading, atmosphere, and texture. " +
-                        "Keep it vivid, concise (under 70 words), and return ONLY the enhanced prompt text with no quotation marks or meta commentary."
+                val systemPrompt = "You are an expert AI Video Director. " +
+                        "Intelligently enhance this video prompt by adding professional cinematic details (lighting, textures, depth, camera angles) " +
+                        "while STRICTLY PRESERVING the user's requested subject, characters, clothing, age, environment, actions, dialogue, and visual style (${directive.visualStyle.label}). " +
+                        "Do NOT invent unrelated objects (e.g. no football or cars unless asked). " +
+                        "Return ONLY the enhanced prompt in under 80 words."
 
-                val promptToSend = "$systemPrompt\n\nStyle: ${style?.name ?: "Cinematic"}\nUser Idea: $rawPrompt"
+                val promptToSend = "$systemPrompt\n\nUser Prompt: $rawPrompt"
 
                 val request = GeminiGenerateContentRequest(
                     contents = listOf(
@@ -117,14 +119,7 @@ class VideoRepository(private val context: Context) {
             }
         }
 
-        // Algorithmic offline enhancer
-        val style = VideoPresets.STYLES.find { it.id == styleId }
-        val suffix = style?.promptSuffix ?: "photorealistic 8k, cinematic lighting, 35mm lens"
-        if (isBengali) {
-            "$rawPrompt, সিনেমাটিক মাস্টারপিস, ৮কে রেজোলিউশন, ড্রামাটিক লাইটিং, হাইপার-ডিটেইল্ড ভিজ্যুয়ালস, $suffix"
-        } else {
-            "Masterpiece cinematic shot of $rawPrompt, captured on ARRI Alexa 65, 35mm anamorphic lens, volumetric lighting, photorealistic textures, 8k resolution, $suffix"
-        }
+        directive.enhancedCinematicPrompt
     }
 
     suspend fun generateStoryScenes(storyIdea: String): List<StoryScene> = withContext(Dispatchers.IO) {
@@ -211,7 +206,8 @@ class VideoRepository(private val context: Context) {
     ): VideoProjectEntity = withContext(Dispatchers.IO) {
         val apiKey = getEffectiveApiKey()
         var aiBitmap: Bitmap? = null
-        val effectivePrompt = enhancedPrompt.ifBlank { prompt }
+        val directive = AiPromptDirector.analyzeAndDirect(prompt)
+        val effectivePrompt = enhancedPrompt.ifBlank { directive.enhancedCinematicPrompt }
         val model = VideoPresets.MODELS.find { it.id == modelId } ?: VideoPresets.MODELS[1]
 
         val isEdgeOnly = architectureId == "edge_only" || modelId == "on_device_neural"
@@ -224,7 +220,7 @@ class VideoRepository(private val context: Context) {
                     contents = listOf(
                         GeminiContent(
                             parts = listOf(
-                                GeminiPart(text = "High resolution masterpiece cinematic shot of $effectivePrompt, detailed textures, dramatic lighting, 8k")
+                                GeminiPart(text = effectivePrompt)
                             ),
                             role = "user"
                         )
@@ -251,6 +247,9 @@ class VideoRepository(private val context: Context) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                if (architectureId == "cloud_first") {
+                    throw IllegalStateException("Cloud AI Error: ${e.localizedMessage ?: "Failed to generate video with cloud model"}. Please check your Gemini API key in Settings.")
+                }
             }
         } else if (isEdgeOnly) {
             onProgress(0.10f, "Using On-Device Engine (Zero-Quota)...")
@@ -258,13 +257,14 @@ class VideoRepository(private val context: Context) {
 
         val (videoPath, thumbPath) = VideoSynthesizer.synthesizeVideo(
             context = context,
-            prompt = effectivePrompt,
+            prompt = prompt,
             styleId = styleId,
             motionId = motionId,
             aspectRatio = aspectRatio,
             durationSeconds = durationSeconds,
             fps = fps,
             sourceBitmap = aiBitmap,
+            directive = directive,
             onProgress = onProgress
         )
 
@@ -273,8 +273,8 @@ class VideoRepository(private val context: Context) {
         val entity = VideoProjectEntity(
             title = title,
             prompt = prompt,
-            enhancedPrompt = enhancedPrompt,
-            style = styleId,
+            enhancedPrompt = effectivePrompt,
+            style = directive.visualStyle.badge,
             cameraMotion = motionId,
             aspectRatio = aspectRatio,
             durationSeconds = durationSeconds,
@@ -282,7 +282,7 @@ class VideoRepository(private val context: Context) {
             resolution = resolution,
             videoPath = videoPath,
             thumbnailPath = thumbPath,
-            generationEngine = "${model.name} (${if (aiBitmap != null) "Cloud AI Active" else "Neural Synthesizer"})",
+            generationEngine = "${model.name} (${if (aiBitmap != null) "Cloud AI Active" else "Neural Director - ${directive.visualStyle.badge}"})",
             sceneCount = sceneCount
         )
 

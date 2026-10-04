@@ -47,7 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isBengali: StateFlow<Boolean> = _isBengali.asStateFlow()
 
     // Prompt & Configuration
-    private val _promptText = MutableStateFlow("A sleek cyberpunk hover-car gliding through neon skyscraper canyons at night")
+    private val _promptText = MutableStateFlow("")
     val promptText: StateFlow<String> = _promptText.asStateFlow()
 
     private val _enhancedPrompt = MutableStateFlow("")
@@ -157,6 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPrompt(text: String) {
         _promptText.value = text
+        _enhancedPrompt.value = "" // Invalidate cached prompt immediately
     }
 
     fun setStyle(style: com.example.data.model.VideoStyle) {
@@ -181,13 +182,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun applyPreset(preset: PresetPrompt) {
         _promptText.value = preset.prompt
+        _enhancedPrompt.value = "" // Invalidate cached prompt
         VideoPresets.STYLES.find { it.id == preset.styleId }?.let { _selectedStyle.value = it }
         VideoPresets.MOTIONS.find { it.id == preset.motionId }?.let { _selectedMotion.value = it }
     }
 
     fun enhancePromptWithGemini() {
         val prompt = _promptText.value.trim()
-        if (prompt.isBlank()) return
+        if (prompt.isBlank()) {
+            Toast.makeText(
+                getApplication(),
+                if (_isBengali.value) "অনুগ্রহ করে ভিডিওর প্রম্পট লিখুন" else "Please enter a video prompt",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
 
         viewModelScope.launch {
             _generationState.value = GenerationUiState.EnhancingPrompt(prompt)
@@ -204,32 +213,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun generateVideo() {
-        val prompt = _promptText.value.trim()
-        if (prompt.isBlank()) {
+        val currentPrompt = _promptText.value.trim()
+        if (currentPrompt.isBlank()) {
             Toast.makeText(
                 getApplication(),
                 if (_isBengali.value) "অনুগ্রহ করে ভিডিওর প্রম্পট লিখুন" else "Please enter a video prompt",
                 Toast.LENGTH_SHORT
             ).show()
+            _generationState.value = GenerationUiState.Error(
+                message = "Please enter a video prompt.",
+                messageBn = "অনুগ্রহ করে ভিডিওর প্রম্পট লিখুন।"
+            )
             return
         }
 
         viewModelScope.launch {
             _generationState.value = GenerationUiState.Generating(
                 progress = 0.05f,
-                stage = "Initializing AI Cinema Synthesizer...",
-                stageBn = "এআই সিনেমা সিন্থেসাইজার প্রস্তুত হচ্ছে..."
+                stage = "Analyzing prompt & directing scene...",
+                stageBn = "প্রম্পট বিশ্লেষণ ও সিনারিও পরিচালনা হচ্ছে..."
             )
 
             try {
                 val enhanced = if (_enhancedPrompt.value.isNotBlank()) {
                     _enhancedPrompt.value
                 } else {
-                    repository.enhancePrompt(prompt, _selectedStyle.value.id, _isBengali.value)
+                    repository.enhancePrompt(currentPrompt, _selectedStyle.value.id, _isBengali.value)
                 }
 
                 val project = repository.createVideoProject(
-                    prompt = prompt,
+                    prompt = currentPrompt,
                     enhancedPrompt = enhanced,
                     styleId = _selectedStyle.value.id,
                     motionId = _selectedMotion.value.id,
@@ -257,7 +270,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 e.printStackTrace()
                 _generationState.value = GenerationUiState.Error(
                     message = e.localizedMessage ?: "Failed to generate video",
-                    messageBn = "ভিডিও জেনারেট করতে সমস্যা হয়েছে: ${e.localizedMessage}"
+                    messageBn = "ভিডিও জেনারেট করতে সমস্যা হয়েছে: ${e.localizedMessage ?: "অজ্ঞাত ত্রুটি"}"
                 )
             }
         }
