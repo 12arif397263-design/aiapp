@@ -35,6 +35,7 @@ object VideoSynthesizer {
         aspectRatio: String, // "16:9", "9:16", "1:1", "4:3"
         durationSeconds: Int = 4,
         fps: Int = 30,
+        sourceBitmap: Bitmap? = null,
         onProgress: (Float, String) -> Unit
     ): Pair<String, String> = withContext(Dispatchers.IO) {
         val videosDir = File(context.filesDir, "videos").apply { if (!exists()) mkdirs() }
@@ -53,9 +54,8 @@ object VideoSynthesizer {
         }
 
         val totalFrames = durationSeconds * fps
-        var thumbnailSaved = false
 
-        onProgress(0.05f, "Configuring Neural Video Encoder...")
+        onProgress(0.15f, "Configuring H.264 Neural Video Engine...")
 
         try {
             renderH264Video(
@@ -68,21 +68,12 @@ object VideoSynthesizer {
                 prompt = prompt,
                 styleId = styleId,
                 motionId = motionId,
+                sourceBitmap = sourceBitmap,
                 onProgress = onProgress
             )
         } catch (e: Exception) {
-            // Fallback: Generate thumbnail and attempt simplified encoder or mock container
             e.printStackTrace()
-            if (!thumbFile.exists()) {
-                val fallbackBmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(fallbackBmp)
-                drawFrame(canvas, width, height, 0.5f, 0, totalFrames, prompt, styleId, motionId)
-                FileOutputStream(thumbFile).use { out ->
-                    fallbackBmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                }
-            }
-            // Re-attempt or create fallback video
-            createFallbackVideo(videoFile, thumbFile, width, height, fps, totalFrames, prompt, styleId, motionId, onProgress)
+            createFallbackVideo(videoFile, thumbFile, width, height, fps, totalFrames, prompt, styleId, motionId, sourceBitmap, onProgress)
         }
 
         Pair(videoFile.absolutePath, thumbFile.absolutePath)
@@ -98,11 +89,11 @@ object VideoSynthesizer {
         prompt: String,
         styleId: String,
         motionId: String,
+        sourceBitmap: Bitmap?,
         onProgress: (Float, String) -> Unit
     ) {
         val mimeType = "video/avc"
         val bitRate = 2_500_000 // 2.5 Mbps
-        val frameIntervalUs = 1_000_000L / fps
 
         val format = MediaFormat.createVideoFormat(mimeType, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -127,13 +118,11 @@ object VideoSynthesizer {
         val muxer = MediaMuxer(videoFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         var trackIndex = -1
         var muxerStarted = false
-
         val bufferInfo = MediaCodec.BufferInfo()
 
         try {
-            // First pass: render frames onto surface and encode
             for (frame in 0 until totalFrames) {
-                val progress = 0.1f + (frame.toFloat() / totalFrames) * 0.8f
+                val progress = 0.2f + (frame.toFloat() / totalFrames) * 0.7f
                 if (frame % (fps / 2) == 0) {
                     val stage = "Synthesizing frame ${frame + 1}/$totalFrames (${(progress * 100).toInt()}%)"
                     onProgress(progress, stage)
@@ -141,7 +130,6 @@ object VideoSynthesizer {
 
                 val t = frame.toFloat() / totalFrames.toFloat()
 
-                // Render onto hardware surface canvas
                 val canvas: Canvas? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     inputSurface.lockHardwareCanvas()
                 } else {
@@ -149,7 +137,7 @@ object VideoSynthesizer {
                 }
 
                 if (canvas != null) {
-                    drawFrame(canvas, width, height, t, frame, totalFrames, prompt, styleId, motionId)
+                    drawFrame(canvas, width, height, t, frame, totalFrames, prompt, styleId, motionId, sourceBitmap)
                     inputSurface.unlockCanvasAndPost(canvas)
                 }
 
@@ -158,24 +146,21 @@ object VideoSynthesizer {
                     try {
                         val thumbBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                         val thumbCanvas = Canvas(thumbBitmap)
-                        drawFrame(thumbCanvas, width, height, t, frame, totalFrames, prompt, styleId, motionId)
+                        drawFrame(thumbCanvas, width, height, t, frame, totalFrames, prompt, styleId, motionId, sourceBitmap)
                         FileOutputStream(thumbFile).use { out ->
                             thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
                         }
                     } catch (_: Exception) {}
                 }
 
-                // Drain encoder output
                 drainEncoder(encoder, muxer, bufferInfo, false) { index ->
                     trackIndex = index
                     muxerStarted = true
                 }
 
-                // Small yield
                 Thread.sleep(2)
             }
 
-            // Signal end of stream
             encoder.signalEndOfInputStream()
             onProgress(0.92f, "Finalizing H.264 Video Container...")
             drainEncoder(encoder, muxer, bufferInfo, true) { index ->
@@ -194,8 +179,6 @@ object VideoSynthesizer {
                 } catch (_: Exception) {}
             }
         }
-
-        onProgress(1.0f, "Render Complete!")
     }
 
     private fun drainEncoder(
@@ -206,8 +189,6 @@ object VideoSynthesizer {
         onMuxerStart: (Int) -> Unit
     ) {
         val timeoutUs = 10000L
-        var muxerStarted = false
-
         while (true) {
             val status = encoder.dequeueOutputBuffer(bufferInfo, timeoutUs)
             if (status == MediaCodec.INFO_TRY_AGAIN_LATER) {
@@ -216,7 +197,6 @@ object VideoSynthesizer {
                 val newFormat = encoder.outputFormat
                 val trackIndex = muxer.addTrack(newFormat)
                 muxer.start()
-                muxerStarted = true
                 onMuxerStart(trackIndex)
             } else if (status >= 0) {
                 val encodedData: ByteBuffer? = encoder.getOutputBuffer(status)
@@ -224,15 +204,12 @@ object VideoSynthesizer {
                     if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                         bufferInfo.size = 0
                     }
-
                     if (bufferInfo.size != 0) {
                         encodedData.position(bufferInfo.offset)
                         encodedData.limit(bufferInfo.offset + bufferInfo.size)
                         muxer.writeSampleData(0, encodedData, bufferInfo)
                     }
-
                     encoder.releaseOutputBuffer(status, false)
-
                     if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                         break
                     }
@@ -251,12 +228,12 @@ object VideoSynthesizer {
         prompt: String,
         styleId: String,
         motionId: String,
+        sourceBitmap: Bitmap?,
         onProgress: (Float, String) -> Unit
     ) {
-        // Generates valid thumbnail and fallback
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        drawFrame(canvas, width, height, 0.5f, totalFrames / 2, totalFrames, prompt, styleId, motionId)
+        drawFrame(canvas, width, height, 0.5f, totalFrames / 2, totalFrames, prompt, styleId, motionId, sourceBitmap)
         FileOutputStream(thumbFile).use { out ->
             bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
@@ -271,48 +248,29 @@ object VideoSynthesizer {
         canvas: Canvas,
         width: Int,
         height: Int,
-        t: Float, // 0.0f to 1.0f progress through video
+        t: Float,
         frameIndex: Int,
         totalFrames: Int,
         prompt: String,
         styleId: String,
-        motionId: String
+        motionId: String,
+        sourceBitmap: Bitmap? = null
     ) {
-        val p = prompt.lowercase()
-
         // 1. Camera Motion Transform
         canvas.save()
         applyCameraMotion(canvas, width, height, t, motionId)
 
-        // 2. Base Atmosphere Background
-        drawAtmosphere(canvas, width, height, t, styleId, p)
-
-        // 3. Scene Objects & Dynamic World
-        when {
-            p.contains("cyber") || p.contains("car") || p.contains("neon") || styleId == "cyberpunk" -> {
-                drawCyberpunkScene(canvas, width, height, t, frameIndex)
-            }
-            p.contains("space") || p.contains("nebula") || p.contains("star") || p.contains("galaxy") -> {
-                drawSpaceScene(canvas, width, height, t, frameIndex)
-            }
-            p.contains("sunset") || p.contains("beach") || p.contains("ocean") || p.contains("sea") || p.contains("bazar") -> {
-                drawSunsetOceanScene(canvas, width, height, t, frameIndex)
-            }
-            p.contains("forest") || p.contains("tree") || p.contains("nature") || p.contains("spirit") -> {
-                drawForestFantasyScene(canvas, width, height, t, frameIndex)
-            }
-            p.contains("dragon") || p.contains("mountain") || styleId == "fantasy" -> {
-                drawDragonMountainScene(canvas, width, height, t, frameIndex)
-            }
-            else -> {
-                drawGeneralCinematicScene(canvas, width, height, t, frameIndex, styleId)
-            }
+        if (sourceBitmap != null) {
+            // Draw real AI Generated Image scaled and centered with smooth Ken Burns motion
+            drawAiGeneratedScene(canvas, width, height, t, frameIndex, sourceBitmap, styleId, prompt)
+        } else {
+            // Draw smart procedural scene based on prompt keywords
+            drawContextualScene(canvas, width, height, t, frameIndex, styleId, prompt)
         }
 
-        // Restore camera transform
         canvas.restore()
 
-        // 4. Cinematic Overlays (Film Letterbox, HUD Watermark, Timecode)
+        // 2. Cinematic Overlays (Film Letterbox, HUD Watermark, Timecode, Prompt Subtitle)
         drawCinematicLetterbox(canvas, width, height, t, frameIndex, totalFrames, prompt, styleId)
     }
 
@@ -328,483 +286,190 @@ object VideoSynthesizer {
 
         when (motionId) {
             "zoom_in" -> {
-                val scale = 1.0f + (t * 0.35f)
+                val scale = 1.0f + (t * 0.25f)
+                canvas.scale(scale, scale, cx, cy)
+            }
+            "zoom_out" -> {
+                val scale = 1.25f - (t * 0.25f)
                 canvas.scale(scale, scale, cx, cy)
             }
             "orbit" -> {
-                val angle = (sin(t * Math.PI.toFloat()) - 0.5f) * 8f
-                val scale = 1.05f + sin(t * Math.PI.toFloat() * 2f) * 0.04f
-                val dx = (t - 0.5f) * width * 0.15f
+                val angle = (sin(t * Math.PI.toFloat()) - 0.5f) * 6f
+                val scale = 1.04f + sin(t * Math.PI.toFloat() * 2f) * 0.03f
+                val dx = (t - 0.5f) * width * 0.10f
                 canvas.translate(dx, 0f)
                 canvas.rotate(angle, cx, cy)
                 canvas.scale(scale, scale, cx, cy)
             }
             "pan_left" -> {
-                val dx = (0.5f - t) * width * 0.25f
+                val dx = (0.5f - t) * width * 0.18f
                 canvas.translate(dx, 0f)
             }
             "pan_right" -> {
-                val dx = (t - 0.5f) * width * 0.25f
+                val dx = (t - 0.5f) * width * 0.18f
                 canvas.translate(dx, 0f)
             }
             "tilt_up" -> {
-                val dy = (0.5f - t) * height * 0.2f
-                val scale = 1.0f + (t * 0.12f)
+                val dy = (0.5f - t) * height * 0.15f
                 canvas.translate(0f, dy)
-                canvas.scale(scale, scale, cx, cy)
             }
-            "fpv" -> {
-                val scale = 1.0f + (t * 0.45f)
-                val shakeX = sin(t * 40f) * 4f
-                val shakeY = cos(t * 30f) * 3f
-                canvas.translate(shakeX, shakeY)
-                canvas.scale(scale, scale, cx, cy)
+            "tilt_down" -> {
+                val dy = (t - 0.5f) * height * 0.15f
+                canvas.translate(0f, dy)
             }
-            else -> {
-                val scale = 1.0f + (t * 0.15f)
+            else -> { // Cinematic subtle push
+                val scale = 1.0f + (t * 0.12f)
                 canvas.scale(scale, scale, cx, cy)
             }
         }
     }
 
-    private fun drawAtmosphere(
-        canvas: Canvas,
-        width: Int,
-        height: Int,
-        t: Float,
-        styleId: String,
-        prompt: String
-    ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        val (topColor, bottomColor) = when (styleId) {
-            "cyberpunk" -> Pair(Color.rgb(10, 6, 28), Color.rgb(38, 12, 60))
-            "anime" -> Pair(Color.rgb(56, 120, 220), Color.rgb(255, 180, 195))
-            "fantasy" -> Pair(Color.rgb(8, 16, 24), Color.rgb(26, 48, 40))
-            "retro_vhs" -> Pair(Color.rgb(30, 10, 45), Color.rgb(80, 20, 70))
-            "pixar3d" -> Pair(Color.rgb(40, 80, 160), Color.rgb(240, 180, 110))
-            else -> Pair(Color.rgb(12, 14, 26), Color.rgb(45, 25, 65))
-        }
-
-        paint.shader = LinearGradient(
-            0f, 0f, 0f, height.toFloat(),
-            topColor, bottomColor,
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-        paint.shader = null
-    }
-
-    private fun drawCyberpunkScene(
-        canvas: Canvas,
-        width: Int,
-        height: Int,
-        t: Float,
-        frameIndex: Int
-    ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // 1. Neon Grid Perspective at Bottom
-        val horizonY = height * 0.65f
-        paint.color = Color.argb(120, 139, 92, 246)
-        paint.strokeWidth = 2f
-
-        // Horizontal lines moving towards viewer
-        val gridOffset = (t * 60f) % 25f
-        var y = horizonY + gridOffset
-        var step = 15f
-        while (y < height) {
-            val alpha = ((y - horizonY) / (height - horizonY) * 200).toInt().coerceIn(0, 255)
-            paint.color = Color.argb(alpha, 139, 92, 246)
-            canvas.drawLine(0f, y, width.toFloat(), y, paint)
-            y += step
-            step += 8f
-        }
-
-        // Perspective fan lines
-        val vanishX = width / 2f
-        for (i in -6..6) {
-            val bottomX = vanishX + (i * width * 0.18f)
-            paint.color = Color.argb(80, 6, 182, 212)
-            canvas.drawLine(vanishX, horizonY, bottomX, height.toFloat(), paint)
-        }
-
-        // 2. Skyscraper Silhouettes
-        val bldgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(14, 12, 28) }
-        val windowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        val buildings = listOf(
-            Triple(0.05f, 0.18f, 0.50f),
-            Triple(0.20f, 0.16f, 0.62f),
-            Triple(0.38f, 0.24f, 0.40f),
-            Triple(0.60f, 0.20f, 0.58f),
-            Triple(0.78f, 0.18f, 0.46f)
-        )
-
-        for ((bXRel, bWRel, bHRel) in buildings) {
-            val bx = bXRel * width
-            val bw = bWRel * width
-            val bh = bHRel * height
-            val by = horizonY - bh
-
-            canvas.drawRect(bx, by, bx + bw, horizonY, bldgPaint)
-
-            // Neon roof antenna
-            paint.color = Color.rgb(244, 63, 94)
-            canvas.drawLine(bx + bw / 2, by, bx + bw / 2, by - 24f, paint)
-            canvas.drawCircle(bx + bw / 2, by - 24f, 3f + (sin(t * 15f) * 2f), paint)
-
-            // Glowing Windows
-            windowPaint.color = Color.argb(160, 245, 158, 11)
-            for (wy in (by + 15f).toInt() until horizonY.toInt() step 20) {
-                for (wx in (bx + 8f).toInt() until (bx + bw - 8f).toInt() step 14) {
-                    if ((wx + wy + frameIndex / 8) % 3 == 0) {
-                        canvas.drawRect(wx.toFloat(), wy.toFloat(), wx + 6f, wy + 8f, windowPaint)
-                    }
-                }
-            }
-        }
-
-        // 3. Futuristic Hover Vehicle Gliding across
-        val carProgress = (t * 1.4f) % 1.2f - 0.1f
-        val carX = carProgress * width
-        val carY = height * 0.48f + sin(t * 12f) * 12f
-        val carW = width * 0.16f
-        val carH = carW * 0.35f
-
-        // Thruster glow trail
-        val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(160, 6, 182, 212)
-            strokeWidth = 6f
-        }
-        canvas.drawLine(carX - carW * 0.8f, carY + carH * 0.5f, carX, carY + carH * 0.5f, glowPaint)
-
-        // Vehicle Chassis
-        paint.color = Color.rgb(20, 24, 38)
-        val carRect = RectF(carX, carY, carX + carW, carY + carH)
-        canvas.drawRoundRect(carRect, 8f, 8f, paint)
-
-        // Cyan Neon Headlight Streak
-        paint.color = Color.rgb(6, 182, 212)
-        canvas.drawCircle(carX + carW * 0.9f, carY + carH * 0.6f, 4f, paint)
-        paint.color = Color.rgb(236, 72, 153)
-        canvas.drawCircle(carX + 4f, carY + carH * 0.6f, 3f, paint)
-
-        // 4. Digital Rain Particles
-        paint.color = Color.argb(140, 6, 182, 212)
-        paint.strokeWidth = 2f
-        for (i in 0..40) {
-            val rx = ((i * 47 + frameIndex * 12) % width).toFloat()
-            val ry = ((i * 83 + frameIndex * 26) % height).toFloat()
-            canvas.drawLine(rx, ry, rx - 3f, ry + 16f, paint)
-        }
-    }
-
-    private fun drawSpaceScene(
-        canvas: Canvas,
-        width: Int,
-        height: Int,
-        t: Float,
-        frameIndex: Int
-    ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val cx = width / 2f
-        val cy = height / 2f
-
-        // 1. Cosmic Nebula Cloud
-        paint.shader = RadialGradient(
-            cx + sin(t * 3f) * 40f, cy + cos(t * 3f) * 30f,
-            width * 0.45f,
-            intArrayOf(Color.argb(180, 147, 51, 234), Color.argb(100, 59, 130, 246), Color.TRANSPARENT),
-            floatArrayOf(0f, 0.5f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawCircle(cx, cy, width * 0.45f, paint)
-        paint.shader = null
-
-        // 2. Starfield Warp
-        paint.strokeWidth = 2f
-        for (i in 0..70) {
-            val angle = (i * 137.5f) * (Math.PI / 180.0)
-            val baseDist = ((i * 29 + frameIndex * 7) % (width * 0.6f))
-            val dist = baseDist * (1f + t * 0.3f)
-            val sx = (cx + cos(angle) * dist).toFloat()
-            val sy = (cy + sin(angle) * dist).toFloat()
-            val tailX = (cx + cos(angle) * (dist - 14f)).toFloat()
-            val tailY = (cy + sin(angle) * (dist - 14f)).toFloat()
-
-            paint.color = Color.argb(200, 255, 255, 255)
-            canvas.drawLine(tailX, tailY, sx, sy, paint)
-        }
-
-        // 3. Majestic Ringed Planet
-        val px = width * 0.72f
-        val py = height * 0.32f
-        val pr = width * 0.12f
-
-        // Planet Body
-        paint.shader = RadialGradient(
-            px - pr * 0.3f, py - pr * 0.3f, pr * 1.2f,
-            intArrayOf(Color.rgb(245, 158, 11), Color.rgb(180, 83, 9), Color.rgb(30, 15, 5)),
-            null,
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawCircle(px, py, pr, paint)
-        paint.shader = null
-
-        // Planet Ring Oval
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 6f
-        paint.color = Color.argb(180, 253, 230, 138)
-        val ringRect = RectF(px - pr * 1.8f, py - pr * 0.4f, px + pr * 1.8f, py + pr * 0.4f)
-        canvas.save()
-        canvas.rotate(-22f, px, py)
-        canvas.drawOval(ringRect, paint)
-        canvas.restore()
-        paint.style = Paint.Style.FILL
-    }
-
-    private fun drawSunsetOceanScene(
-        canvas: Canvas,
-        width: Int,
-        height: Int,
-        t: Float,
-        frameIndex: Int
-    ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val horizonY = height * 0.58f
-
-        // 1. Giant Golden Sun
-        val sunY = horizonY - height * 0.12f + (t * 20f)
-        val sunX = width * 0.5f
-        val sunRadius = width * 0.14f
-
-        paint.shader = RadialGradient(
-            sunX, sunY, sunRadius * 1.8f,
-            intArrayOf(Color.rgb(255, 237, 74), Color.rgb(249, 115, 22), Color.argb(0, 239, 68, 68)),
-            floatArrayOf(0f, 0.4f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawCircle(sunX, sunY, sunRadius * 1.8f, paint)
-        paint.shader = null
-
-        paint.color = Color.rgb(255, 240, 180)
-        canvas.drawCircle(sunX, sunY, sunRadius * 0.7f, paint)
-
-        // 2. Ocean Surface with Reflective Waves
-        paint.shader = LinearGradient(
-            0f, horizonY, 0f, height.toFloat(),
-            Color.rgb(180, 70, 40), Color.rgb(15, 25, 45),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(0f, horizonY, width.toFloat(), height.toFloat(), paint)
-        paint.shader = null
-
-        // Animated Sun Reflection Column
-        paint.color = Color.argb(160, 255, 215, 100)
-        paint.strokeWidth = 3f
-        var wy = horizonY + 8f
-        var waveWidth = width * 0.15f
-        while (wy < height) {
-            val waveOffset = sin((wy * 0.05f) + (t * 8f) + (frameIndex * 0.1f)) * 12f
-            canvas.drawLine(
-                sunX - waveWidth / 2 + waveOffset,
-                wy,
-                sunX + waveWidth / 2 + waveOffset,
-                wy,
-                paint
-            )
-            wy += 10f
-            waveWidth *= 1.15f
-        }
-
-        // 3. Wooden Fishing Boat Silhouette (Traditional Cox's Bazar Boat)
-        val boatX = width * 0.32f + (sin(t * 3f) * 15f)
-        val boatY = horizonY + height * 0.08f + (cos(t * 4f) * 5f)
-        val boatW = width * 0.12f
-        val boatH = boatW * 0.35f
-
-        paint.color = Color.rgb(20, 15, 25)
-        val boatPath = Path().apply {
-            moveTo(boatX, boatY)
-            quadTo(boatX + boatW * 0.5f, boatY + boatH, boatX + boatW, boatY)
-            lineTo(boatX + boatW * 0.85f, boatY - 2f)
-            close()
-        }
-        canvas.drawPath(boatPath, paint)
-        // Boat Mast
-        canvas.drawLine(boatX + boatW * 0.45f, boatY, boatX + boatW * 0.45f, boatY - boatH * 1.8f, paint)
-
-        // 4. Flying Seagulls
-        paint.color = Color.argb(220, 40, 20, 30)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 3f
-        for (i in 0..4) {
-            val gx = (width * (0.6f + i * 0.07f) + (t * 30f)) % width
-            val gy = height * 0.25f + (i * 20f) + (sin(t * 12f + i) * 8f)
-            val flap = sin(t * 20f + i) * 6f
-            val gullPath = Path().apply {
-                moveTo(gx - 12f, gy + flap)
-                quadTo(gx - 6f, gy - 4f, gx, gy)
-                quadTo(gx + 6f, gy - 4f, gx + 12f, gy + flap)
-            }
-            canvas.drawPath(gullPath, paint)
-        }
-        paint.style = Paint.Style.FILL
-    }
-
-    private fun drawForestFantasyScene(
-        canvas: Canvas,
-        width: Int,
-        height: Int,
-        t: Float,
-        frameIndex: Int
-    ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // Volumetric Sunbeams
-        paint.shader = LinearGradient(
-            0f, 0f, width * 0.8f, height * 0.8f,
-            Color.argb(80, 253, 230, 138), Color.TRANSPARENT,
-            Shader.TileMode.CLAMP
-        )
-        val beamPath = Path().apply {
-            moveTo(width * 0.1f, 0f)
-            lineTo(width * 0.4f, 0f)
-            lineTo(width * 0.9f, height.toFloat())
-            lineTo(width * 0.4f, height.toFloat())
-            close()
-        }
-        canvas.drawPath(beamPath, paint)
-        paint.shader = null
-
-        // Ancient Giant Tree Silhouette
-        val trunkX = width * 0.25f
-        paint.color = Color.rgb(18, 28, 24)
-        val trunkPath = Path().apply {
-            moveTo(trunkX - 30f, height.toFloat())
-            quadTo(trunkX, height * 0.6f, trunkX + 20f, height * 0.3f)
-            quadTo(trunkX + 60f, height * 0.6f, trunkX + 80f, height.toFloat())
-            close()
-        }
-        canvas.drawPath(trunkPath, paint)
-
-        // Lush Canopy
-        paint.color = Color.argb(220, 22, 45, 34)
-        canvas.drawCircle(trunkX + 10f, height * 0.25f, width * 0.25f, paint)
-        canvas.drawCircle(trunkX + width * 0.2f, height * 0.22f, width * 0.2f, paint)
-
-        // Glowing Bioluminescent Fairies/Spores
-        for (i in 0..30) {
-            val fx = ((i * 37 + sin(t * 5f + i) * 20f) % width).toFloat()
-            val fy = ((i * 61 + cos(t * 4f + i) * 25f + frameIndex * 2) % (height * 0.8f)).toFloat()
-            val pulse = (sin(t * 10f + i) + 1f) * 0.5f
-
-            paint.color = Color.argb((pulse * 200).toInt(), 52, 211, 153)
-            canvas.drawCircle(fx, fy, 4f + pulse * 4f, paint)
-            paint.color = Color.argb((pulse * 255).toInt(), 255, 255, 255)
-            canvas.drawCircle(fx, fy, 2f, paint)
-        }
-    }
-
-    private fun drawDragonMountainScene(
-        canvas: Canvas,
-        width: Int,
-        height: Int,
-        t: Float,
-        frameIndex: Int
-    ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // Mountain Layers
-        paint.color = Color.rgb(28, 38, 55)
-        val mt1 = Path().apply {
-            moveTo(0f, height * 0.6f)
-            lineTo(width * 0.35f, height * 0.28f)
-            lineTo(width * 0.7f, height * 0.65f)
-            lineTo(width.toFloat(), height * 0.4f)
-            lineTo(width.toFloat(), height.toFloat())
-            lineTo(0f, height.toFloat())
-            close()
-        }
-        canvas.drawPath(mt1, paint)
-
-        // Snow Peak Caps
-        paint.color = Color.rgb(220, 230, 245)
-        val snowCap = Path().apply {
-            moveTo(width * 0.35f, height * 0.28f)
-            lineTo(width * 0.28f, height * 0.36f)
-            lineTo(width * 0.35f, height * 0.34f)
-            lineTo(width * 0.42f, height * 0.36f)
-            close()
-        }
-        canvas.drawPath(snowCap, paint)
-
-        // Flying Dragon Silhouette
-        val dx = width * 0.2f + (t * width * 0.6f)
-        val dy = height * 0.35f + sin(t * 8f) * 25f
-        val wingFlap = sin(t * 16f) * 28f
-
-        paint.color = Color.rgb(18, 15, 28)
-        val dragonPath = Path().apply {
-            // Body
-            moveTo(dx, dy)
-            quadTo(dx - 30f, dy + 6f, dx - 60f, dy + 12f)
-            // Left wing
-            moveTo(dx - 15f, dy)
-            lineTo(dx - 25f, dy - 35f + wingFlap)
-            lineTo(dx + 10f, dy - 15f)
-            close()
-        }
-        canvas.drawPath(dragonPath, paint)
-    }
-
-    private fun drawGeneralCinematicScene(
+    private fun drawAiGeneratedScene(
         canvas: Canvas,
         width: Int,
         height: Int,
         t: Float,
         frameIndex: Int,
-        styleId: String
+        bitmap: Bitmap,
+        styleId: String,
+        prompt: String
     ) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val cx = width / 2f
-        val cy = height / 2f
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
-        // Central Radiant Holographic Orb / Core
-        val orbRadius = width * 0.16f + sin(t * 6f) * 10f
-        paint.shader = RadialGradient(
-            cx, cy, orbRadius * 1.5f,
-            intArrayOf(Color.argb(220, 139, 92, 246), Color.argb(120, 6, 182, 212), Color.TRANSPARENT),
-            floatArrayOf(0f, 0.6f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawCircle(cx, cy, orbRadius * 1.5f, paint)
+        // CenterCrop to fill frame with a slight overscale to avoid black borders during camera motion
+        val bmpWidth = bitmap.width.toFloat()
+        val bmpHeight = bitmap.height.toFloat()
+        val scale = maxOf(width / bmpWidth, height / bmpHeight) * 1.12f
+
+        val scaledW = bmpWidth * scale
+        val scaledH = bmpHeight * scale
+        val left = (width - scaledW) / 2f
+        val top = (height - scaledH) / 2f
+
+        val destRect = RectF(left, top, left + scaledW, top + scaledH)
+        canvas.drawBitmap(bitmap, null, destRect, paint)
+
+        // 1. Moving Anamorphic Sunbeam / Lens Flare
+        val flarePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            val fx = width * (0.15f + t * 0.70f)
+            val fy = height * 0.25f
+            shader = RadialGradient(
+                fx, fy, width * 0.55f,
+                intArrayOf(Color.argb(75, 255, 240, 200), Color.argb(25, 255, 190, 110), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.45f, 1f),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), flarePaint)
+
+        // 2. Procedural Floating Cinematic Particles / Embers
+        val particlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(130, 255, 255, 240)
+            style = Paint.Style.FILL
+        }
+        val particleCount = 28
+        for (i in 0 until particleCount) {
+            val seed = (i * 9973 + 31)
+            val baseX = (seed % width).toFloat()
+            val baseY = ((seed / 7) % height).toFloat()
+            val px = (baseX + t * 70f + sin((t * 5f + i).toDouble()).toFloat() * 18f) % width
+            val py = (baseY - t * 50f + cos((t * 4f + i).toDouble()).toFloat() * 12f + height) % height
+            val radius = 1.4f + (i % 3) * 1.1f
+            canvas.drawCircle(px, py, radius, particlePaint)
+        }
+
+        // 3. Cinematic Color Grading Tint
+        val tintColor = when (styleId) {
+            "cyberpunk" -> Color.argb(30, 0, 230, 255)
+            "anime" -> Color.argb(22, 255, 170, 200)
+            "vintage" -> Color.argb(40, 190, 140, 75)
+            "scifi" -> Color.argb(28, 50, 130, 255)
+            "horror" -> Color.argb(35, 15, 25, 35)
+            else -> Color.argb(18, 255, 215, 140)
+        }
+        canvas.drawColor(tintColor)
+    }
+
+    private fun drawContextualScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int,
+        styleId: String,
+        prompt: String
+    ) {
+        val p = prompt.lowercase()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Background Sky
+        val skyShader = when {
+            p.contains("sunset") || p.contains("সূর্য") || p.contains("beach") || p.contains("river") || p.contains("নদী") -> {
+                LinearGradient(0f, 0f, 0f, height.toFloat(),
+                    intArrayOf(Color.rgb(180, 40, 70), Color.rgb(245, 130, 40), Color.rgb(255, 210, 100)),
+                    floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            }
+            p.contains("cyber") || p.contains("car") || p.contains("gadi") || p.contains("গাড়ি") || styleId == "cyberpunk" -> {
+                LinearGradient(0f, 0f, 0f, height.toFloat(),
+                    intArrayOf(Color.rgb(10, 5, 30), Color.rgb(25, 10, 60), Color.rgb(0, 180, 216)),
+                    floatArrayOf(0f, 0.65f, 1f), Shader.TileMode.CLAMP)
+            }
+            p.contains("nature") || p.contains("forest") || p.contains("tree") || p.contains("বন") || p.contains("গাছ") -> {
+                LinearGradient(0f, 0f, 0f, height.toFloat(),
+                    intArrayOf(Color.rgb(20, 50, 40), Color.rgb(35, 95, 60), Color.rgb(100, 180, 110)),
+                    floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+            }
+            p.contains("space") || p.contains("star") || p.contains("চাঁদ") || p.contains("moon") -> {
+                LinearGradient(0f, 0f, 0f, height.toFloat(),
+                    intArrayOf(Color.rgb(5, 5, 20), Color.rgb(30, 15, 65), Color.rgb(15, 25, 50)),
+                    floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+            }
+            else -> { // Cinematic Epic Golden Hour
+                LinearGradient(0f, 0f, 0f, height.toFloat(),
+                    intArrayOf(Color.rgb(25, 30, 55), Color.rgb(120, 60, 90), Color.rgb(230, 140, 60)),
+                    floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            }
+        }
+        paint.shader = skyShader
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
 
-        // Geometric Energy Rings
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 3f
-        paint.color = Color.argb(180, 236, 72, 153)
-        val rot1 = t * 120f
-        canvas.save()
-        canvas.rotate(rot1, cx, cy)
-        canvas.drawOval(RectF(cx - orbRadius * 1.4f, cy - orbRadius * 0.6f, cx + orbRadius * 1.4f, cy + orbRadius * 0.6f), paint)
-        canvas.restore()
+        // Glowing Sun / Moon / Horizon
+        val sunX = width * (0.3f + t * 0.4f)
+        val sunY = height * 0.42f
+        val sunPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(sunX, sunY, width * 0.35f,
+                intArrayOf(Color.argb(220, 255, 240, 180), Color.argb(100, 255, 140, 40), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        }
+        canvas.drawCircle(sunX, sunY, width * 0.35f, sunPaint)
 
-        paint.color = Color.argb(180, 59, 130, 246)
-        canvas.save()
-        canvas.rotate(-rot1 * 0.8f, cx, cy)
-        canvas.drawOval(RectF(cx - orbRadius * 0.7f, cy - orbRadius * 1.5f, cx + orbRadius * 0.7f, cy + orbRadius * 1.5f), paint)
-        canvas.restore()
-        paint.style = Paint.Style.FILL
+        // Terrain / Waves / Ground
+        val groundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(15, 18, 30)
+            style = Paint.Style.FILL
+        }
+        val groundPath = Path().apply {
+            val groundY = height * 0.68f
+            moveTo(0f, groundY)
+            var x = 0f
+            while (x <= width) {
+                val wave = sin((x / 90f + t * 4f).toDouble()).toFloat() * 12f
+                lineTo(x, groundY + wave)
+                x += 20f
+            }
+            lineTo(width.toFloat(), height.toFloat())
+            lineTo(0f, height.toFloat())
+            close()
+        }
+        canvas.drawPath(groundPath, groundPaint)
 
-        // Dynamic Floating Particles
-        paint.color = Color.argb(180, 255, 255, 255)
-        for (i in 0..35) {
-            val px = (cx + cos((i * 41 + t * 40f).toDouble()) * (width * 0.35f * (i / 35f + 0.2f))).toFloat()
-            val py = (cy + sin((i * 37 + t * 35f).toDouble()) * (height * 0.35f * (i / 35f + 0.2f))).toFloat()
-            canvas.drawCircle(px, py, 3f + (i % 3), paint)
+        // Floating Atmospheric Particles
+        paint.color = Color.argb(140, 255, 255, 230)
+        for (i in 0..25) {
+            val px = (width * 0.1f + (i * 37f + t * 60f) % (width * 0.8f))
+            val py = (height * 0.3f + sin((i * 12 + t * 5f).toDouble()).toFloat() * 60f)
+            canvas.drawCircle(px, py, 2f + (i % 3), paint)
         }
     }
 
@@ -818,41 +483,50 @@ object VideoSynthesizer {
         prompt: String,
         styleId: String
     ) {
-        val barHeight = height * 0.06f
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+        val barHeight = (height * 0.10f).coerceAtLeast(42f)
+        val barPaint = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+        }
 
-        // Top & Bottom letterbox bars
-        canvas.drawRect(0f, 0f, width.toFloat(), barHeight, paint)
-        canvas.drawRect(0f, height - barHeight, width.toFloat(), height.toFloat(), paint)
+        // Top & bottom letterbox bars
+        canvas.drawRect(0f, 0f, width.toFloat(), barHeight, barPaint)
+        canvas.drawRect(0f, height - barHeight, width.toFloat(), height.toFloat(), barPaint)
 
-        // Top HUD Information (Cinematic Timecode & 4K HDR tag)
+        // Top HUD: Brand & Style
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(200, 255, 255, 255)
-            textSize = (barHeight * 0.45f).coerceAtLeast(16f)
+            color = Color.WHITE
+            textSize = 20f
             isFakeBoldText = true
         }
 
-        // Live Timecode
-        val currentMs = (t * (totalFrames / 30f) * 1000).toInt()
-        val sec = currentMs / 1000
-        val ms = (currentMs % 1000) / 10
-        val timecodeStr = String.format("TC %02d:%02d:%02d", 0, sec, ms)
-        canvas.drawText(timecodeStr, 20f, barHeight * 0.72f, textPaint)
+        // REC Indicator
+        val recDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if ((frameIndex / 15) % 2 == 0) Color.RED else Color.TRANSPARENT
+        }
+        canvas.drawCircle(30f, barHeight * 0.55f, 6f, recDotPaint)
+        textPaint.color = Color.WHITE
+        textPaint.textSize = 18f
+        canvas.drawText("OMNIVIDEO AI  |  ${styleId.uppercase()}", 48f, barHeight * 0.62f, textPaint)
 
-        // "4K HDR • AI VEO" badge on top right
-        val badgeText = "4K ULTRA HD • 60 FPS"
-        val badgeWidth = textPaint.measureText(badgeText)
-        canvas.drawText(badgeText, width - badgeWidth - 20f, barHeight * 0.72f, textPaint)
+        // Timecode on right
+        val seconds = (t * 4).toInt()
+        val frames = (frameIndex % 30).toString().padStart(2, '0')
+        val timecode = "00:0${seconds}:$frames"
+        val tcWidth = textPaint.measureText(timecode)
+        textPaint.color = Color.rgb(200, 200, 200)
+        canvas.drawText(timecode, width - tcWidth - 24f, barHeight * 0.62f, textPaint)
 
-        // Bottom HUD: Watermark / App Brand
-        textPaint.color = Color.argb(160, 200, 200, 220)
-        textPaint.textSize = (barHeight * 0.42f).coerceAtLeast(14f)
-        val brandStr = "OmniVideo AI Studio"
-        canvas.drawText(brandStr, 20f, height - barHeight * 0.32f, textPaint)
-
-        // Clean truncated prompt title
-        val cleanPrompt = if (prompt.length > 40) prompt.take(38) + "..." else prompt
-        val promptWidth = textPaint.measureText(cleanPrompt)
-        canvas.drawText(cleanPrompt, width - promptWidth - 20f, height - barHeight * 0.32f, textPaint)
+        // Bottom Subtitle: User's exact prompt!
+        val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(240, 240, 240)
+            textSize = 21f
+            isFakeBoldText = true
+            setShadowLayer(4f, 1f, 1f, Color.BLACK)
+        }
+        val cleanPrompt = prompt.take(55).let { if (prompt.length > 55) "$it..." else it }
+        val promptWidth = subPaint.measureText(cleanPrompt)
+        val promptX = ((width - promptWidth) / 2f).coerceAtLeast(20f)
+        canvas.drawText(cleanPrompt, promptX, height - barHeight * 0.38f, subPaint)
     }
 }

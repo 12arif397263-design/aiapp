@@ -13,6 +13,12 @@ interface GeminiApiService {
         @Body request: GeminiGenerateContentRequest
     ): GeminiGenerateContentResponse
 
+    @POST("v1beta/models/gemini-2.5-flash-image:generateContent")
+    suspend fun generateImageContent(
+        @Query("key") apiKey: String,
+        @Body request: GeminiGenerateContentRequest
+    ): GeminiGenerateContentResponse
+
     @POST("v1beta/models/veo-3.1-fast-generate-preview:generateVideos")
     suspend fun generateVideoVeo(
         @Query("key") apiKey: String,

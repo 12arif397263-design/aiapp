@@ -25,6 +25,28 @@ data class AspectRatioOption(
     val resolutionHeight: Int
 )
 
+data class AiVideoModelOption(
+    val id: String,
+    val name: String,
+    val nameBn: String,
+    val description: String,
+    val descriptionBn: String,
+    val badge: String,
+    val isCloud: Boolean,
+    val modelTag: String,
+    val iconName: String
+)
+
+data class SystemArchitectureOption(
+    val id: String,
+    val title: String,
+    val titleBn: String,
+    val subtitle: String,
+    val subtitleBn: String,
+    val badge: String,
+    val iconName: String
+)
+
 data class PresetPrompt(
     val title: String,
     val titleBn: String,
@@ -51,6 +73,95 @@ sealed interface GenerationUiState {
 }
 
 object VideoPresets {
+
+    val MODELS = listOf(
+        AiVideoModelOption(
+            id = "veo_3_1_fast",
+            name = "Google Veo 3.1 Fast",
+            nameBn = "গুগল ভিও ৩.১ ফাস্ট (Veo)",
+            description = "Official Google DeepMind Video Model - Ultra fast high quality generative AI video",
+            descriptionBn = "গুগল ডিপমাইন্ডের অফিসিয়াল ভিডিও জেনারেশন এআই মডেল",
+            badge = "DeepMind Veo",
+            isCloud = true,
+            modelTag = "veo-3.1-fast-generate-preview",
+            iconName = "veo"
+        ),
+        AiVideoModelOption(
+            id = "gemini_2_5_flash_image",
+            name = "Gemini 2.5 Flash + Neural Cinema",
+            nameBn = "জেমিনাই ২.৫ ফ্ল্যাশ + নিউরাল সিনেমা",
+            description = "Photorealistic AI visual frames synthesized with 60FPS camera motion & dynamic lighting",
+            descriptionBn = "জেমিনাই হাইপার-রিয়েলিস্টিক ভিজ্যুয়াল + ৬০ এফপিএস ক্যামেরা ফিজিক্স",
+            badge = "Recommended",
+            isCloud = true,
+            modelTag = "gemini-2.5-flash-image",
+            iconName = "gemini"
+        ),
+        AiVideoModelOption(
+            id = "gemini_3_1_flash_image",
+            name = "Gemini 3.1 Flash Image (4K)",
+            nameBn = "জেমিনাই ৩.১ ফ্ল্যাশ ইমেজ (৪কে)",
+            description = "Next-gen 4K resolution visual synthesis with cinematic 3D parallax",
+            descriptionBn = "পরবর্তী প্রজন্মের ৪কে রেজোলিউশন ভিজ্যুয়াল ও থ্রিডি প্যারালাক্স",
+            badge = "Ultra 4K",
+            isCloud = true,
+            modelTag = "gemini-3.1-flash-image-preview",
+            iconName = "sparkles"
+        ),
+        AiVideoModelOption(
+            id = "veo_3_1_hd",
+            name = "Google Veo 3.1 HD Cinema",
+            nameBn = "গুগল ভিও ৩.১ এইচডি সিনেমা",
+            description = "Hollywood cinema 1080p generative video with temporal motion coherence",
+            descriptionBn = "হলিউড লেভেলের সিনেমাটিক ১০৮০পি ফুল জেনারেটিভ এআই ভিডিও",
+            badge = "Cinema HD",
+            isCloud = true,
+            modelTag = "veo-3.1-generate-preview",
+            iconName = "movie"
+        ),
+        AiVideoModelOption(
+            id = "on_device_neural",
+            name = "On-Device Neural Engine (Offline)",
+            nameBn = "অন-ডিভাইস নিউরাল ইঞ্জিন (অফলাইন)",
+            description = "Hardware-accelerated H.264 engine on your phone. Works 100% offline without API key or internet",
+            descriptionBn = "ফোনের হার্ডওয়্যার অ্যাকসিলারেটেড ইঞ্জিন। ইন্টারনেট বা এপিআই কি ছাড়াই ১০০% অফলাইন",
+            badge = "100% Free / Offline",
+            isCloud = false,
+            modelTag = "local-h264",
+            iconName = "bolt"
+        )
+    )
+
+    val ARCHITECTURES = listOf(
+        SystemArchitectureOption(
+            id = "cloud_first",
+            title = "Google Cloud AI Architecture",
+            titleBn = "গুগল ক্লাউড এআই আর্কিটেকচার",
+            subtitle = "Direct Google DeepMind Veo & Gemini API endpoints for cloud-generated AI video",
+            subtitleBn = "সরাসরি গুগল ক্লাউড জেমিনাই ও ভিও এপিআই সংযোগ",
+            badge = "Cloud Native",
+            iconName = "cloud"
+        ),
+        SystemArchitectureOption(
+            id = "hybrid",
+            title = "Hybrid Cloud-Edge Cinema",
+            titleBn = "হাইব্রিড ক্লাউড-এজ সিনেমা পাইপলাইন",
+            subtitle = "Cloud AI visual scene generation coupled with on-device H.264 video hardware encoding",
+            subtitleBn = "ক্লাউড এআই ভিজ্যুয়াল জেনারেশন + অন-ডিভাইস এমপি৪ হার্ডওয়্যার এনকোডিং",
+            badge = "Default / Fast",
+            iconName = "memory"
+        ),
+        SystemArchitectureOption(
+            id = "edge_only",
+            title = "Edge / On-Device Pipeline",
+            titleBn = "সম্পূর্ণ অন-ডিভাইস এজ পাইপলাইন",
+            subtitle = "100% On-device rendering. Zero internet consumption, zero API quota, instant creation",
+            subtitleBn = "১০০% অফলাইন অন-ডিভাইস রেন্ডারিং। কোনো ডেটা খরচ নেই, কোনো কোটা বাধা নেই",
+            badge = "Zero-Quota",
+            iconName = "speed"
+        )
+    )
+
     val STYLES = listOf(
         VideoStyle(
             id = "photoreal",

@@ -14,14 +14,27 @@ data class GeminiContent(
 )
 
 data class GeminiPart(
-    val text: String? = null
+    val text: String? = null,
+    val inlineData: GeminiInlineData? = null
+)
+
+data class GeminiInlineData(
+    val mimeType: String? = null,
+    val data: String? = null
+)
+
+data class GeminiImageConfig(
+    val aspectRatio: String? = "16:9",
+    val imageSize: String? = null
 )
 
 data class GeminiGenerationConfig(
     val temperature: Float? = 0.7f,
     val topP: Float? = 0.95f,
     val topK: Int? = 40,
-    val maxOutputTokens: Int? = 2048
+    val maxOutputTokens: Int? = 2048,
+    val responseModalities: List<String>? = null,
+    val imageConfig: GeminiImageConfig? = null
 )
 
 data class GeminiGenerateContentResponse(

@@ -86,6 +86,8 @@ fun GeneratorScreen(
     val selectedMotion by viewModel.selectedMotion.collectAsState()
     val selectedAspectRatio by viewModel.selectedAspectRatio.collectAsState()
     val selectedDuration by viewModel.selectedDuration.collectAsState()
+    val selectedModel by viewModel.selectedModel.collectAsState()
+    val selectedArchitecture by viewModel.selectedArchitecture.collectAsState()
     val motionStrength by viewModel.motionStrength.collectAsState()
     val isBengali by viewModel.isBengali.collectAsState()
     val generationState by viewModel.generationState.collectAsState()
@@ -353,6 +355,158 @@ fun GeneratorScreen(
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.5 AI Video Model Selector (কোন মডেল দিয়ে ভিডিও বানাবো)
+        item {
+            Spacer(modifier = Modifier.height(20.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.RocketLaunch,
+                            contentDescription = "AI Models",
+                            tint = CyberCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isBengali) "এআই ভিডিও মডেল নির্বাচন করুন" else "Select AI Video Model",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = NeonViolet.copy(alpha = 0.2f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonViolet.copy(alpha = 0.4f))
+                    ) {
+                        Text(
+                            text = selectedModel.badge,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberCyan,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VideoPresets.MODELS.forEach { modelOption ->
+                        val isSelected = modelOption.id == selectedModel.id
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { viewModel.selectModel(modelOption) }
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    brush = if (isSelected) Brush.horizontalGradient(listOf(CyberCyan, NeonViolet)) else Brush.linearGradient(listOf(CardBorder, CardBorder)),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .testTag("model_${modelOption.id}"),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) CinemaSurfaceVariant else CinemaSurface
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isSelected) Brush.linearGradient(listOf(CyberCyan, NeonViolet))
+                                            else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.1f), Color.White.copy(alpha = 0.05f)))
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (modelOption.isCloud) Icons.Default.Videocam else Icons.Default.Speed,
+                                        contentDescription = modelOption.name,
+                                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (isBengali) modelOption.nameBn else modelOption.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.9f)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isSelected) AmberGlow.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.08f)
+                                        ) {
+                                            Text(
+                                                text = modelOption.badge,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) AmberGlow else Color.White.copy(alpha = 0.6f),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(2.dp))
+
+                                    Text(
+                                        text = if (isBengali) modelOption.descriptionBn else modelOption.description,
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.65f),
+                                        lineHeight = 15.sp
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) CyberCyan else Color.White.copy(alpha = 0.3f),
+                                            shape = CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(CyberCyan)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

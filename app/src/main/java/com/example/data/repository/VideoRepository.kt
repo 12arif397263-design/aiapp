@@ -1,14 +1,21 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import com.example.BuildConfig
 import com.example.data.generator.VideoSynthesizer
 import com.example.data.local.AppDatabase
 import com.example.data.local.VideoProjectEntity
+import com.example.data.model.AiVideoModelOption
 import com.example.data.model.StoryScene
+import com.example.data.model.SystemArchitectureOption
 import com.example.data.model.VideoPresets
 import com.example.data.remote.GeminiContent
 import com.example.data.remote.GeminiGenerateContentRequest
+import com.example.data.remote.GeminiGenerationConfig
+import com.example.data.remote.GeminiImageConfig
 import com.example.data.remote.GeminiPart
 import com.example.data.remote.RetrofitClient
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +26,7 @@ import java.io.File
 class VideoRepository(private val context: Context) {
     private val db = AppDatabase.getDatabase(context)
     private val dao = db.videoProjectDao()
+    private val prefs = context.getSharedPreferences("omnivideo_prefs", Context.MODE_PRIVATE)
 
     fun getAllVideos(): Flow<List<VideoProjectEntity>> = dao.getAllVideos()
     fun getFavoriteVideos(): Flow<List<VideoProjectEntity>> = dao.getFavoriteVideos()
@@ -32,7 +40,6 @@ class VideoRepository(private val context: Context) {
     }
 
     suspend fun deleteVideo(video: VideoProjectEntity) = withContext(Dispatchers.IO) {
-        // Delete video file from storage
         try {
             val file = File(video.videoPath)
             if (file.exists()) file.delete()
@@ -44,9 +51,44 @@ class VideoRepository(private val context: Context) {
         dao.deleteVideo(video)
     }
 
+    fun getUserApiKey(): String {
+        return prefs.getString("gemini_api_key", "") ?: ""
+    }
+
+    fun saveUserApiKey(key: String) {
+        prefs.edit().putString("gemini_api_key", key.trim()).apply()
+    }
+
+    fun getEffectiveApiKey(): String {
+        val userKey = getUserApiKey()
+        if (userKey.isNotBlank()) return userKey
+        return try {
+            val buildKey = BuildConfig.GEMINI_API_KEY
+            if (buildKey.isNotBlank() && buildKey != "MY_GEMINI_API_KEY") buildKey else ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    fun getSavedModelId(): String {
+        return prefs.getString("selected_model_id", "gemini_2_5_flash_image") ?: "gemini_2_5_flash_image"
+    }
+
+    fun saveModelId(id: String) {
+        prefs.edit().putString("selected_model_id", id).apply()
+    }
+
+    fun getSavedArchitectureId(): String {
+        return prefs.getString("selected_arch_id", "hybrid") ?: "hybrid"
+    }
+
+    fun saveArchitectureId(id: String) {
+        prefs.edit().putString("selected_arch_id", id).apply()
+    }
+
     suspend fun enhancePrompt(rawPrompt: String, styleId: String, isBengali: Boolean): String = withContext(Dispatchers.IO) {
-        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (_: Exception) { "" }
-        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+        val apiKey = getEffectiveApiKey()
+        if (apiKey.isNotBlank()) {
             try {
                 val style = VideoPresets.STYLES.find { it.id == styleId }
                 val systemPrompt = "You are a world-class Hollywood cinematographer and AI video prompt engineer. " +
@@ -86,8 +128,8 @@ class VideoRepository(private val context: Context) {
     }
 
     suspend fun generateStoryScenes(storyIdea: String): List<StoryScene> = withContext(Dispatchers.IO) {
-        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (_: Exception) { "" }
-        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+        val apiKey = getEffectiveApiKey()
+        if (apiKey.isNotBlank()) {
             try {
                 val instruction = "You are a movie director. Break down this story into exactly 3 consecutive cinematic scenes. " +
                         "For each scene provide: [Scene Number]: Title | Visual Description | Camera Angle. " +
@@ -128,7 +170,6 @@ class VideoRepository(private val context: Context) {
             }
         }
 
-        // Algorithmic default scenes
         listOf(
             StoryScene(
                 sceneNumber = 1,
@@ -164,16 +205,66 @@ class VideoRepository(private val context: Context) {
         fps: Int = 30,
         resolution: String = "1080p",
         sceneCount: Int = 1,
+        modelId: String = "gemini_2_5_flash_image",
+        architectureId: String = "hybrid",
         onProgress: (Float, String) -> Unit
     ): VideoProjectEntity = withContext(Dispatchers.IO) {
+        val apiKey = getEffectiveApiKey()
+        var aiBitmap: Bitmap? = null
+        val effectivePrompt = enhancedPrompt.ifBlank { prompt }
+        val model = VideoPresets.MODELS.find { it.id == modelId } ?: VideoPresets.MODELS[1]
+
+        val isEdgeOnly = architectureId == "edge_only" || modelId == "on_device_neural"
+
+        if (!isEdgeOnly && apiKey.isNotBlank()) {
+            try {
+                onProgress(0.08f, "Connecting to ${model.name}...")
+
+                val imageRequest = GeminiGenerateContentRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(
+                                GeminiPart(text = "High resolution masterpiece cinematic shot of $effectivePrompt, detailed textures, dramatic lighting, 8k")
+                            ),
+                            role = "user"
+                        )
+                    ),
+                    generationConfig = GeminiGenerationConfig(
+                        responseModalities = listOf("IMAGE"),
+                        imageConfig = GeminiImageConfig(
+                            aspectRatio = when (aspectRatio) {
+                                "9:16" -> "9:16"
+                                "1:1" -> "1:1"
+                                "4:3" -> "4:3"
+                                else -> "16:9"
+                            }
+                        )
+                    )
+                )
+
+                val imageResponse = RetrofitClient.geminiService.generateImageContent(apiKey, imageRequest)
+                val base64Data = imageResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.inlineData?.data
+                if (!base64Data.isNullOrBlank()) {
+                    val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                    aiBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    onProgress(0.28f, "AI visual generated by ${model.name}! Synthesizing motion...")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else if (isEdgeOnly) {
+            onProgress(0.10f, "Using On-Device Engine (Zero-Quota)...")
+        }
+
         val (videoPath, thumbPath) = VideoSynthesizer.synthesizeVideo(
             context = context,
-            prompt = enhancedPrompt.ifBlank { prompt },
+            prompt = effectivePrompt,
             styleId = styleId,
             motionId = motionId,
             aspectRatio = aspectRatio,
             durationSeconds = durationSeconds,
             fps = fps,
+            sourceBitmap = aiBitmap,
             onProgress = onProgress
         )
 
@@ -191,7 +282,7 @@ class VideoRepository(private val context: Context) {
             resolution = resolution,
             videoPath = videoPath,
             thumbnailPath = thumbPath,
-            generationEngine = "AI Video Synthesizer (Neural H.264)",
+            generationEngine = "${model.name} (${if (aiBitmap != null) "Cloud AI Active" else "Neural Synthesizer"})",
             sceneCount = sceneCount
         )
 

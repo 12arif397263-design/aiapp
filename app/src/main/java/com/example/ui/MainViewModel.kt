@@ -62,6 +62,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedAspectRatio = MutableStateFlow(VideoPresets.ASPECT_RATIOS.first())
     val selectedAspectRatio: StateFlow<com.example.data.model.AspectRatioOption> = _selectedAspectRatio.asStateFlow()
 
+    private val _selectedModel = MutableStateFlow(
+        VideoPresets.MODELS.find { it.id == repository.getSavedModelId() } ?: VideoPresets.MODELS[1]
+    )
+    val selectedModel: StateFlow<com.example.data.model.AiVideoModelOption> = _selectedModel.asStateFlow()
+
+    private val _selectedArchitecture = MutableStateFlow(
+        VideoPresets.ARCHITECTURES.find { it.id == repository.getSavedArchitectureId() } ?: VideoPresets.ARCHITECTURES[1]
+    )
+    val selectedArchitecture: StateFlow<com.example.data.model.SystemArchitectureOption> = _selectedArchitecture.asStateFlow()
+
+    private val _userApiKey = MutableStateFlow(repository.getUserApiKey())
+    val userApiKey: StateFlow<String> = _userApiKey.asStateFlow()
+
+    fun selectModel(model: com.example.data.model.AiVideoModelOption) {
+        _selectedModel.value = model
+        repository.saveModelId(model.id)
+    }
+
+    fun selectArchitecture(arch: com.example.data.model.SystemArchitectureOption) {
+        _selectedArchitecture.value = arch
+        repository.saveArchitectureId(arch.id)
+    }
+
+    fun saveUserApiKey(key: String) {
+        _userApiKey.value = key.trim()
+        repository.saveUserApiKey(key.trim())
+    }
+
     private val _selectedDuration = MutableStateFlow(4) // 4 seconds
     val selectedDuration: StateFlow<Int> = _selectedDuration.asStateFlow()
 
@@ -209,7 +237,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     durationSeconds = _selectedDuration.value,
                     fps = _selectedFps.value,
                     resolution = "1080p",
-                    sceneCount = 1
+                    sceneCount = 1,
+                    modelId = _selectedModel.value.id,
+                    architectureId = _selectedArchitecture.value.id
                 ) { progress, stage ->
                     val stageBn = when {
                         progress < 0.2f -> "সিনারিও ও ক্যামেরা ট্রাজেক্টরি কম্পোজ হচ্ছে..."
