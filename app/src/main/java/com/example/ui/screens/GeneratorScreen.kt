@@ -24,6 +24,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraRoll
@@ -51,6 +53,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,6 +93,7 @@ fun GeneratorScreen(
     val selectedDuration by viewModel.selectedDuration.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
     val selectedArchitecture by viewModel.selectedArchitecture.collectAsState()
+    val userApiKey by viewModel.userApiKey.collectAsState()
     val motionStrength by viewModel.motionStrength.collectAsState()
     val isBengali by viewModel.isBengali.collectAsState()
     val generationState by viewModel.generationState.collectAsState()
@@ -180,6 +186,121 @@ fun GeneratorScreen(
                         fontWeight = FontWeight.ExtraBold,
                         color = Color.White
                     )
+                }
+            }
+        }
+
+        // 1.5 Google Gemini API Key Activation Card
+        item {
+            var quickApiKey by remember(userApiKey) { mutableStateOf(userApiKey) }
+            val hasActiveKey = userApiKey.isNotBlank()
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (hasActiveKey) CinemaSurface else CinemaSurfaceVariant
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (hasActiveKey) EmeraldGreen.copy(alpha = 0.5f) else AmberGlow.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (hasActiveKey) Icons.Default.CheckCircle else Icons.Default.Key,
+                                contentDescription = "Key",
+                                tint = if (hasActiveKey) EmeraldGreen else AmberGlow,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (hasActiveKey) {
+                                    if (isBengali) "গুগল জেমিনাই ক্লাউড সক্রিয়" else "Google Gemini Cloud Active"
+                                } else {
+                                    if (isBengali) "গুগল এআই কী যুক্ত করুন (ফ্রি)" else "Connect Google Gemini Key (Free)"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (hasActiveKey) EmeraldGreen else AmberGlow
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (hasActiveKey) EmeraldGreen.copy(alpha = 0.2f) else AmberGlow.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = if (hasActiveKey) "Online AI" else "Local / Free",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (hasActiveKey) EmeraldGreen else AmberGlow,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    if (!hasActiveKey) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (isBengali)
+                                "ফটোরিয়ালিস্টিক ক্লাউড এআই ভিডিওর জন্য আপনার ফ্রি Gemini API Key দিন, অথবা অফলাইন ইঞ্জিনে বানান:"
+                            else
+                                "Enter your free Gemini API Key for photorealistic cloud video, or use the local engine:",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.7f),
+                            lineHeight = 15.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = quickApiKey,
+                                onValueChange = { quickApiKey = it },
+                                modifier = Modifier
+                                    .weight(1f),
+                                placeholder = {
+                                    Text("AIzaSy...", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f))
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = CinemaSurface,
+                                    unfocusedContainerColor = CinemaSurface,
+                                    focusedBorderColor = CyberCyan,
+                                    unfocusedBorderColor = CardBorder,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.saveUserApiKey(quickApiKey)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonViolet),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.height(52.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp)
+                            ) {
+                                Text(
+                                    text = if (isBengali) "সেভ" else "Save",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

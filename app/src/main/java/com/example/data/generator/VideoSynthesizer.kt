@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -336,7 +337,6 @@ object VideoSynthesizer {
     ) {
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
-        // CenterCrop to fill frame with a slight overscale to avoid black borders during camera motion
         val bmpWidth = bitmap.width.toFloat()
         val bmpHeight = bitmap.height.toFloat()
         val scale = maxOf(width / bmpWidth, height / bmpHeight) * 1.12f
@@ -400,77 +400,653 @@ object VideoSynthesizer {
         prompt: String
     ) {
         val p = prompt.lowercase()
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Background Sky
-        val skyShader = when {
-            p.contains("sunset") || p.contains("সূর্য") || p.contains("beach") || p.contains("river") || p.contains("নদী") -> {
-                LinearGradient(0f, 0f, 0f, height.toFloat(),
-                    intArrayOf(Color.rgb(180, 40, 70), Color.rgb(245, 130, 40), Color.rgb(255, 210, 100)),
-                    floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        when {
+            // 1. Boy / Girl / Kids Playing in Field / Sports / Football
+            p.contains("ছেলে") || p.contains("মেয়ে") || p.contains("বাচ্চা") || p.contains("মাঠ") ||
+            p.contains("খেলা") || p.contains("ফুটবল") || p.contains("ক্রিকেট") ||
+            p.contains("boy") || p.contains("girl") || p.contains("kid") || p.contains("field") ||
+            p.contains("play") || p.contains("football") || p.contains("soccer") || p.contains("cricket") -> {
+                drawFieldAndPlayingBoyScene(canvas, width, height, t, frameIndex)
             }
-            p.contains("cyber") || p.contains("car") || p.contains("gadi") || p.contains("গাড়ি") || styleId == "cyberpunk" -> {
-                LinearGradient(0f, 0f, 0f, height.toFloat(),
-                    intArrayOf(Color.rgb(10, 5, 30), Color.rgb(25, 10, 60), Color.rgb(0, 180, 216)),
-                    floatArrayOf(0f, 0.65f, 1f), Shader.TileMode.CLAMP)
+            // 2. Animals / Pets / Birds / Cat / Dog
+            p.contains("বিড়াল") || p.contains("বিড়াল") || p.contains("কুকুর") || p.contains("পাখি") || p.contains("প্রাণী") ||
+            p.contains("cat") || p.contains("dog") || p.contains("bird") || p.contains("animal") || p.contains("kitten") -> {
+                drawAnimalMeadowScene(canvas, width, height, t, frameIndex)
             }
-            p.contains("nature") || p.contains("forest") || p.contains("tree") || p.contains("বন") || p.contains("গাছ") -> {
-                LinearGradient(0f, 0f, 0f, height.toFloat(),
-                    intArrayOf(Color.rgb(20, 50, 40), Color.rgb(35, 95, 60), Color.rgb(100, 180, 110)),
-                    floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+            // 3. Cars / Vehicles / Racing
+            p.contains("গাড়ি") || p.contains("গাড়ি") || p.contains("বাইক") ||
+            p.contains("car") || p.contains("bike") || p.contains("vehicle") || p.contains("racing") || p.contains("speed") -> {
+                drawCyberCarHighwayScene(canvas, width, height, t, frameIndex)
             }
-            p.contains("space") || p.contains("star") || p.contains("চাঁদ") || p.contains("moon") -> {
-                LinearGradient(0f, 0f, 0f, height.toFloat(),
-                    intArrayOf(Color.rgb(5, 5, 20), Color.rgb(30, 15, 65), Color.rgb(15, 25, 50)),
-                    floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+            // 4. River / Boat / Water / Ocean
+            p.contains("নদী") || p.contains("নৌকা") || p.contains("পানি") || p.contains("সমুদ্র") ||
+            p.contains("boat") || p.contains("river") || p.contains("ocean") || p.contains("sea") || p.contains("water") -> {
+                drawRiverAndBoatScene(canvas, width, height, t, frameIndex)
             }
-            else -> { // Cinematic Epic Golden Hour
-                LinearGradient(0f, 0f, 0f, height.toFloat(),
-                    intArrayOf(Color.rgb(25, 30, 55), Color.rgb(120, 60, 90), Color.rgb(230, 140, 60)),
-                    floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            // 5. Space / Moon / Stars / Universe
+            p.contains("মহাকাশ") || p.contains("চাঁদ") || p.contains("তারা") || p.contains("গ্রহ") ||
+            p.contains("space") || p.contains("moon") || p.contains("star") || p.contains("galaxy") || p.contains("planet") -> {
+                drawCosmicSpaceScene(canvas, width, height, t, frameIndex)
+            }
+            // 6. Rain / City / Streets
+            p.contains("বৃষ্টি") || p.contains("শহর") || p.contains("বিল্ডিং") ||
+            p.contains("rain") || p.contains("city") || p.contains("street") || p.contains("building") -> {
+                drawRainyCityScene(canvas, width, height, t, frameIndex)
+            }
+            // 7. Nature / Forest / Mountains
+            p.contains("বন") || p.contains("গাছ") || p.contains("পাহাড়") || p.contains("পাহাড়") ||
+            p.contains("nature") || p.contains("forest") || p.contains("tree") || p.contains("mountain") -> {
+                drawMountainForestScene(canvas, width, height, t, frameIndex)
+            }
+            // 8. Sunset / Sunrise
+            p.contains("সূর্য") || p.contains("sunset") || p.contains("sunrise") || p.contains("dawn") -> {
+                drawSunsetHorizonScene(canvas, width, height, t, frameIndex)
+            }
+            // Default: Dramatic Cinematic Hero Landscape
+            else -> {
+                drawCinematicHeroScene(canvas, width, height, t, frameIndex, prompt)
             }
         }
-        paint.shader = skyShader
+    }
+
+    // 1. BOY PLAYING IN GREEN FIELD WITH BOUNCING FOOTBALL
+    private fun drawFieldAndPlayingBoyScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // 1. Sunny Bright Sky Gradient
+        paint.shader = LinearGradient(0f, 0f, 0f, height * 0.65f,
+            intArrayOf(Color.rgb(56, 161, 243), Color.rgb(135, 206, 250), Color.rgb(220, 245, 255)),
+            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height * 0.65f, paint)
+        paint.shader = null
+
+        // 2. Radiant Golden Sun
+        val sunX = width * 0.82f
+        val sunY = height * 0.22f
+        paint.shader = RadialGradient(sunX, sunY, width * 0.25f,
+            intArrayOf(Color.argb(255, 255, 245, 180), Color.argb(120, 255, 210, 80), Color.TRANSPARENT),
+            floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawCircle(sunX, sunY, width * 0.25f, paint)
+        paint.shader = null
+
+        // 3. Drifting Fluffy Clouds
+        paint.color = Color.argb(220, 255, 255, 255)
+        for (i in 0..2) {
+            val cx = (width * 0.15f + i * width * 0.35f + t * 40f) % (width * 1.2f) - width * 0.1f
+            val cy = height * (0.15f + i * 0.08f)
+            canvas.drawCircle(cx, cy, 35f, paint)
+            canvas.drawCircle(cx + 30f, cy - 8f, 42f, paint)
+            canvas.drawCircle(cx + 60f, cy + 2f, 32f, paint)
+            canvas.drawRoundRect(RectF(cx - 20f, cy, cx + 80f, cy + 30f), 15f, 15f, paint)
+        }
+
+        // 4. Distant Trees & Village Horizon
+        paint.color = Color.rgb(40, 110, 55)
+        val treePath = Path()
+        treePath.moveTo(0f, height * 0.62f)
+        var tx = 0f
+        while (tx <= width) {
+            val th = height * 0.58f + sin((tx * 0.05f).toDouble()).toFloat() * 15f
+            treePath.lineTo(tx, th)
+            tx += 25f
+        }
+        treePath.lineTo(width.toFloat(), height.toFloat())
+        treePath.lineTo(0f, height.toFloat())
+        treePath.close()
+        canvas.drawPath(treePath, paint)
+
+        // 5. Lush Green Playing Field (Grass)
+        val groundY = height * 0.62f
+        paint.shader = LinearGradient(0f, groundY, 0f, height.toFloat(),
+            intArrayOf(Color.rgb(50, 168, 82), Color.rgb(30, 120, 50), Color.rgb(15, 75, 30)),
+            floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, groundY, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+
+        // 6. Perspective Soccer Field Lines
+        paint.color = Color.argb(160, 255, 255, 255)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        canvas.drawLine(width * 0.1f, groundY + 15f, width * 0.9f, groundY + 15f, paint)
+        canvas.drawLine(0f, height.toFloat(), width * 0.35f, groundY + 15f, paint)
+        canvas.drawLine(width.toFloat(), height.toFloat(), width * 0.65f, groundY + 15f, paint)
+        paint.style = Paint.Style.FILL
+
+        // 7. Dynamic Bouncing Soccer Ball!
+        val ballProgress = (t * 2f) % 1f
+        val ballX = width * (0.25f + ballProgress * 0.55f)
+        val bounceHeight = 80f * abs(sin((ballProgress * Math.PI * 3.0)).toFloat())
+        val ballY = (groundY + 80f) - bounceHeight
+        val ballRadius = 18f
+
+        // Ball Shadow
+        paint.color = Color.argb(80, 0, 0, 0)
+        val shadowScale = (1f - (bounceHeight / 100f)).coerceIn(0.4f, 1f)
+        canvas.drawOval(RectF(ballX - 20f * shadowScale, groundY + 85f, ballX + 20f * shadowScale, groundY + 95f), paint)
+
+        // White Soccer Ball
+        paint.color = Color.WHITE
+        canvas.drawCircle(ballX, ballY, ballRadius, paint)
+
+        // Black Pentagon pattern on ball
+        paint.color = Color.BLACK
+        canvas.drawCircle(ballX, ballY, ballRadius * 0.35f, paint)
+        for (a in 0..4) {
+            val angle = (a * 72 + t * 360f).toDouble() * Math.PI / 180.0
+            val px = (ballX + cos(angle) * (ballRadius * 0.7f)).toFloat()
+            val py = (ballY + sin(angle) * (ballRadius * 0.7f)).toFloat()
+            canvas.drawCircle(px, py, ballRadius * 0.18f, paint)
+        }
+
+        // 8. Dynamic Animated Boy Silhouette Running Towards Ball!
+        val boyX = width * (0.15f + t * 0.40f)
+        val boyGroundY = groundY + 85f
+        val runCycle = sin((t * 24.0)).toFloat() // Fast running leg cycle
+
+        // Boy Shadow
+        paint.color = Color.argb(90, 0, 0, 0)
+        canvas.drawOval(RectF(boyX - 25f, boyGroundY - 4f, boyX + 25f, boyGroundY + 6f), paint)
+
+        // Boy Body (Stylized Silhouette)
+        paint.color = Color.rgb(20, 25, 45)
+        val headRadius = 14f
+        val headY = boyGroundY - 95f
+
+        // Head
+        canvas.drawCircle(boyX, headY, headRadius, paint)
+
+        // Torso
+        paint.strokeWidth = 12f
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.style = Paint.Style.STROKE
+        val shoulderY = headY + 16f
+        val hipX = boyX - 8f
+        val hipY = boyGroundY - 45f
+        canvas.drawLine(boyX, shoulderY, hipX, hipY, paint)
+
+        // Legs (Running cycle)
+        val leg1EndX = hipX + 22f * runCycle
+        val leg1EndY = boyGroundY
+        val leg2EndX = hipX - 22f * runCycle
+        val leg2EndY = boyGroundY - abs(runCycle) * 15f
+        canvas.drawLine(hipX, hipY, leg1EndX, leg1EndY, paint)
+        canvas.drawLine(hipX, hipY, leg2EndX, leg2EndY, paint)
+
+        // Arms (Pumping in run)
+        val arm1EndX = boyX + 20f * -runCycle
+        val arm1EndY = shoulderY + 18f
+        val arm2EndX = boyX - 18f * -runCycle
+        val arm2EndY = shoulderY + 22f
+        paint.strokeWidth = 7f
+        canvas.drawLine(boyX, shoulderY + 4f, arm1EndX, arm1EndY, paint)
+        canvas.drawLine(boyX, shoulderY + 4f, arm2EndX, arm2EndY, paint)
+        paint.style = Paint.Style.FILL
+
+        // Red T-Shirt on Boy
+        paint.color = Color.rgb(239, 68, 68)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 10f
+        canvas.drawLine(boyX, shoulderY + 2f, hipX, hipY - 8f, paint)
+        paint.style = Paint.Style.FILL
+
+        // 9. Floating Sunlit Grass Dust / Pollen
+        paint.color = Color.argb(140, 255, 255, 200)
+        for (i in 0..20) {
+            val px = (width * 0.1f + (i * 47f + t * 50f) % (width * 0.8f))
+            val py = (groundY - 30f + sin((i * 15 + t * 6f).toDouble()).toFloat() * 40f)
+            canvas.drawCircle(px, py, 2.5f, paint)
+        }
+    }
+
+    // 2. PLAYFUL ANIMAL IN SUNLIT MEADOW
+    private fun drawAnimalMeadowScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Warm Pastel Sky
+        paint.shader = LinearGradient(0f, 0f, 0f, height * 0.6f,
+            intArrayOf(Color.rgb(255, 223, 186), Color.rgb(255, 240, 220), Color.rgb(230, 245, 230)),
+            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height * 0.6f, paint)
+        paint.shader = null
+
+        // Rolling Meadow Hills
+        val groundY = height * 0.58f
+        paint.shader = LinearGradient(0f, groundY, 0f, height.toFloat(),
+            intArrayOf(Color.rgb(76, 175, 80), Color.rgb(46, 125, 50)),
+            floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, groundY, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+
+        // Playful Cat / Pet Silhouette
+        val petX = width * (0.35f + sin(t * 4.0).toFloat() * 0.15f)
+        val petY = groundY + 70f
+        paint.color = Color.rgb(45, 30, 25)
+
+        // Body
+        canvas.drawOval(RectF(petX - 35f, petY - 25f, petX + 35f, petY + 25f), paint)
+        // Head
+        canvas.drawCircle(petX + 35f, petY - 20f, 22f, paint)
+        // Ears
+        val ear1 = Path().apply {
+            moveTo(petX + 25f, petY - 32f)
+            lineTo(petX + 30f, petY - 52f)
+            lineTo(petX + 40f, petY - 36f)
+            close()
+        }
+        val ear2 = Path().apply {
+            moveTo(petX + 38f, petY - 36f)
+            lineTo(petX + 48f, petY - 50f)
+            lineTo(petX + 50f, petY - 30f)
+            close()
+        }
+        canvas.drawPath(ear1, paint)
+        canvas.drawPath(ear2, paint)
+
+        // Animated Wagging Tail
+        paint.strokeWidth = 6f
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        val tailPath = Path().apply {
+            moveTo(petX - 32f, petY)
+            val wag = sin(t * 16.0).toFloat() * 25f
+            quadTo(petX - 55f, petY - 40f + wag, petX - 45f, petY - 60f + wag)
+        }
+        canvas.drawPath(tailPath, paint)
+        paint.style = Paint.Style.FILL
+
+        // Fluttering Butterfly
+        val bfx = petX + 90f + sin(t * 8.0).toFloat() * 30f
+        val bfy = petY - 80f + cos(t * 10.0).toFloat() * 25f
+        paint.color = Color.rgb(255, 105, 180)
+        canvas.drawCircle(bfx - 6f, bfy - 4f, 8f, paint)
+        canvas.drawCircle(bfx + 6f, bfy - 4f, 8f, paint)
+    }
+
+    // 3. CYBERPUNK CAR ON PERSPECTIVE HIGHWAY
+    private fun drawCyberCarHighwayScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Dark Neon Night Sky
+        paint.shader = LinearGradient(0f, 0f, 0f, height * 0.55f,
+            intArrayOf(Color.rgb(10, 5, 25), Color.rgb(20, 10, 50), Color.rgb(0, 180, 216)),
+            floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height * 0.55f, paint)
+        paint.shader = null
+
+        // Distant Glowing City Skyline
+        paint.color = Color.rgb(15, 12, 35)
+        for (i in 0..12) {
+            val bx = i * (width / 11f)
+            val bh = height * (0.25f + ((i * 7) % 5) * 0.05f)
+            canvas.drawRect(bx, bh, bx + (width / 13f), height * 0.55f, paint)
+        }
+
+        // Asphalt Highway with Perspective
+        val groundY = height * 0.55f
+        paint.color = Color.rgb(20, 22, 28)
+        canvas.drawRect(0f, groundY, width.toFloat(), height.toFloat(), paint)
+
+        // Speeding Highway Stripes
+        paint.color = Color.rgb(255, 215, 0)
+        paint.strokeWidth = 8f
+        val stripeOffset = (t * 8f) % 1f
+        for (s in 0..5) {
+            val sy = groundY + ((s + stripeOffset) / 6f) * (height - groundY)
+            val sx = width * 0.5f
+            canvas.drawLine(sx, sy, sx, sy + 25f, paint)
+        }
+
+        // Sports Car Silhouette (Chassis)
+        val carX = width * 0.5f
+        val carY = height * 0.78f
+        val carW = width * 0.32f
+        val carH = height * 0.12f
+
+        paint.color = Color.rgb(15, 15, 20)
+        val carBody = Path().apply {
+            moveTo(carX - carW * 0.5f, carY + carH * 0.3f)
+            lineTo(carX - carW * 0.45f, carY - carH * 0.1f)
+            lineTo(carX - carW * 0.25f, carY - carH * 0.5f)
+            lineTo(carX + carW * 0.25f, carY - carH * 0.5f)
+            lineTo(carX + carW * 0.45f, carY - carH * 0.1f)
+            lineTo(carX + carW * 0.5f, carY + carH * 0.3f)
+            close()
+        }
+        canvas.drawPath(carBody, paint)
+
+        // Glowing Neon Red Taillights
+        paint.color = Color.rgb(255, 30, 80)
+        canvas.drawRoundRect(RectF(carX - carW * 0.42f, carY - 6f, carX - carW * 0.15f, carY + 8f), 4f, 4f, paint)
+        canvas.drawRoundRect(RectF(carX + carW * 0.15f, carY - 6f, carX + carW * 0.42f, carY + 8f), 4f, 4f, paint)
+
+        // Neon Glow effect
+        val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(carX, carY, carW * 0.6f,
+                intArrayOf(Color.argb(120, 255, 30, 80), Color.TRANSPARENT),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
+        }
+        canvas.drawCircle(carX, carY, carW * 0.6f, glowPaint)
+    }
+
+    // 4. TRADITIONAL BOAT ON SHIMMERING RIVER
+    private fun drawRiverAndBoatScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Golden Hour Sky
+        paint.shader = LinearGradient(0f, 0f, 0f, height * 0.52f,
+            intArrayOf(Color.rgb(180, 50, 80), Color.rgb(240, 130, 50), Color.rgb(255, 215, 120)),
+            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height * 0.52f, paint)
+        paint.shader = null
+
+        // Big Radiant Setting Sun
+        val sunX = width * 0.45f
+        val sunY = height * 0.38f
+        paint.shader = RadialGradient(sunX, sunY, width * 0.28f,
+            intArrayOf(Color.argb(255, 255, 240, 180), Color.argb(120, 255, 150, 40), Color.TRANSPARENT),
+            floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawCircle(sunX, sunY, width * 0.28f, paint)
+        paint.shader = null
+
+        // Shimmering River Water
+        val waterY = height * 0.52f
+        paint.shader = LinearGradient(0f, waterY, 0f, height.toFloat(),
+            intArrayOf(Color.rgb(190, 100, 50), Color.rgb(40, 70, 110), Color.rgb(20, 35, 60)),
+            floatArrayOf(0f, 0.3f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, waterY, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+
+        // Sun Reflection Waves
+        paint.color = Color.argb(160, 255, 220, 140)
+        paint.strokeWidth = 3f
+        for (w in 0..10) {
+            val wy = waterY + 15f + w * 25f
+            val ww = (120f + w * 35f) * (0.8f + sin((w * 1.5 + t * 6.0)).toFloat() * 0.2f)
+            canvas.drawLine(sunX - ww * 0.5f, wy, sunX + ww * 0.5f, wy, paint)
+        }
+
+        // Traditional Sailing Boat
+        val boatX = width * (0.25f + t * 0.30f)
+        val boatY = waterY + 90f + sin(t * 6.0).toFloat() * 6f
+        val boatAngle = sin(t * 6.0).toFloat() * 4f
+
+        canvas.save()
+        canvas.rotate(boatAngle, boatX, boatY)
+        paint.color = Color.rgb(25, 20, 20)
+
+        // Hull
+        val hullPath = Path().apply {
+            moveTo(boatX - 55f, boatY)
+            lineTo(boatX - 45f, boatY + 18f)
+            lineTo(boatX + 55f, boatY + 18f)
+            lineTo(boatX + 65f, boatY)
+            close()
+        }
+        canvas.drawPath(hullPath, paint)
+
+        // Mast
+        paint.strokeWidth = 4f
+        canvas.drawLine(boatX, boatY, boatX, boatY - 70f, paint)
+
+        // Triangular Sail
+        paint.color = Color.rgb(240, 230, 210)
+        val sailPath = Path().apply {
+            moveTo(boatX + 2f, boatY - 68f)
+            lineTo(boatX + 38f, boatY - 15f)
+            lineTo(boatX + 2f, boatY - 15f)
+            close()
+        }
+        canvas.drawPath(sailPath, paint)
+        canvas.restore()
+
+        // Flying Seagulls
+        paint.color = Color.rgb(30, 30, 30)
+        paint.strokeWidth = 2.5f
+        paint.style = Paint.Style.STROKE
+        for (i in 0..3) {
+            val gx = width * (0.6f + i * 0.1f + t * 0.1f)
+            val gy = height * (0.2f + i * 0.05f + sin((t * 8.0 + i).toDouble()).toFloat() * 10f)
+            canvas.drawArc(RectF(gx - 15f, gy - 10f, gx, gy + 10f), 180f, 180f, false, paint)
+            canvas.drawArc(RectF(gx, gy - 10f, gx + 15f, gy + 10f), 180f, 180f, false, paint)
+        }
+        paint.style = Paint.Style.FILL
+    }
+
+    // 5. COSMIC SPACE SCENE
+    private fun drawCosmicSpaceScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Deep Space Gradient
+        paint.shader = RadialGradient(width * 0.5f, height * 0.5f, width * 0.8f,
+            intArrayOf(Color.rgb(40, 15, 70), Color.rgb(10, 5, 30), Color.rgb(2, 2, 8)),
+            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
 
-        // Glowing Sun / Moon / Horizon
-        val sunX = width * (0.3f + t * 0.4f)
-        val sunY = height * 0.42f
-        val sunPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = RadialGradient(sunX, sunY, width * 0.35f,
-                intArrayOf(Color.argb(220, 255, 240, 180), Color.argb(100, 255, 140, 40), Color.TRANSPARENT),
-                floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        // Glowing Starfield
+        paint.color = Color.WHITE
+        for (i in 0..70) {
+            val sx = (i * 9973) % width
+            val sy = (i * 7919) % height
+            val alpha = (120 + ((i + frameIndex) % 135)).coerceIn(80, 255)
+            paint.alpha = alpha
+            canvas.drawCircle(sx.toFloat(), sy.toFloat(), 1.5f + (i % 3), paint)
         }
-        canvas.drawCircle(sunX, sunY, width * 0.35f, sunPaint)
+        paint.alpha = 255
 
-        // Terrain / Waves / Ground
-        val groundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(15, 18, 30)
-            style = Paint.Style.FILL
+        // Glowing Planet with Ring (Saturn-like)
+        val px = width * 0.35f
+        val py = height * 0.38f
+        val pr = width * 0.16f
+        paint.shader = RadialGradient(px - pr * 0.3f, py - pr * 0.3f, pr * 1.2f,
+            intArrayOf(Color.rgb(255, 180, 120), Color.rgb(190, 80, 90), Color.rgb(40, 20, 60)),
+            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawCircle(px, py, pr, paint)
+        paint.shader = null
+
+        // Planet Ring
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 14f
+        paint.color = Color.argb(160, 240, 200, 150)
+        canvas.drawOval(RectF(px - pr * 1.8f, py - pr * 0.3f, px + pr * 1.8f, py + pr * 0.3f), paint)
+        paint.style = Paint.Style.FILL
+
+        // Flying Spaceship with Thruster Fire
+        val shipX = width * (0.6f + t * 0.25f)
+        val shipY = height * (0.65f - t * 0.15f)
+        paint.color = Color.rgb(240, 240, 250)
+        val shipPath = Path().apply {
+            moveTo(shipX + 30f, shipY)
+            lineTo(shipX - 25f, shipY - 14f)
+            lineTo(shipX - 15f, shipY)
+            lineTo(shipX - 25f, shipY + 14f)
+            close()
         }
-        val groundPath = Path().apply {
-            val groundY = height * 0.68f
-            moveTo(0f, groundY)
-            var x = 0f
-            while (x <= width) {
-                val wave = sin((x / 90f + t * 4f).toDouble()).toFloat() * 12f
-                lineTo(x, groundY + wave)
-                x += 20f
-            }
+        canvas.drawPath(shipPath, paint)
+
+        // Cyan Thruster Flame
+        paint.color = Color.rgb(0, 230, 255)
+        canvas.drawCircle(shipX - 20f, shipY, 8f + sin(t * 20.0).toFloat() * 3f, paint)
+    }
+
+    // 6. RAINY CITY STREET
+    private fun drawRainyCityScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Foggy Rainy Sky
+        paint.shader = LinearGradient(0f, 0f, 0f, height.toFloat(),
+            intArrayOf(Color.rgb(15, 20, 30), Color.rgb(30, 40, 55), Color.rgb(20, 25, 35)),
+            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+
+        // Skyscrapers
+        paint.color = Color.rgb(20, 25, 40)
+        for (i in 0..8) {
+            val bx = i * (width / 7f)
+            val bh = height * (0.2f + (i % 4) * 0.08f)
+            canvas.drawRect(bx, bh, bx + width * 0.12f, height.toFloat(), paint)
+        }
+
+        // Falling Raindrops
+        paint.color = Color.argb(160, 200, 220, 255)
+        paint.strokeWidth = 2f
+        for (r in 0..100) {
+            val rx = (r * 1237 + frameIndex * 15) % width
+            val ry = (r * 791 + frameIndex * 35) % height
+            canvas.drawLine(rx.toFloat(), ry.toFloat(), rx.toFloat() - 8f, ry.toFloat() + 25f, paint)
+        }
+    }
+
+    // 7. MAJESTIC MOUNTAINS & PINE FOREST
+    private fun drawMountainForestScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Clean Dawn Sky
+        paint.shader = LinearGradient(0f, 0f, 0f, height * 0.6f,
+            intArrayOf(Color.rgb(130, 180, 230), Color.rgb(220, 210, 200)),
+            floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height * 0.6f, paint)
+        paint.shader = null
+
+        // Distant Mountains
+        paint.color = Color.rgb(70, 95, 130)
+        val mPath = Path().apply {
+            moveTo(0f, height * 0.5f)
+            lineTo(width * 0.25f, height * 0.28f)
+            lineTo(width * 0.55f, height * 0.45f)
+            lineTo(width * 0.85f, height * 0.22f)
+            lineTo(width.toFloat(), height * 0.5f)
             lineTo(width.toFloat(), height.toFloat())
             lineTo(0f, height.toFloat())
             close()
         }
-        canvas.drawPath(groundPath, groundPaint)
+        canvas.drawPath(mPath, paint)
 
-        // Floating Atmospheric Particles
-        paint.color = Color.argb(140, 255, 255, 230)
-        for (i in 0..25) {
-            val px = (width * 0.1f + (i * 37f + t * 60f) % (width * 0.8f))
-            val py = (height * 0.3f + sin((i * 12 + t * 5f).toDouble()).toFloat() * 60f)
-            canvas.drawCircle(px, py, 2f + (i % 3), paint)
+        // Pine Trees
+        paint.color = Color.rgb(30, 60, 45)
+        canvas.drawRect(0f, height * 0.5f, width.toFloat(), height.toFloat(), paint)
+    }
+
+    // 8. SUNSET HORIZON
+    private fun drawSunsetHorizonScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.shader = LinearGradient(0f, 0f, 0f, height.toFloat(),
+            intArrayOf(Color.rgb(180, 40, 70), Color.rgb(245, 130, 40), Color.rgb(255, 210, 100)),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+
+        val sunX = width * (0.3f + t * 0.4f)
+        val sunY = height * 0.42f
+        paint.shader = RadialGradient(sunX, sunY, width * 0.35f,
+            intArrayOf(Color.argb(220, 255, 240, 180), Color.argb(100, 255, 140, 40), Color.TRANSPARENT),
+            floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawCircle(sunX, sunY, width * 0.35f, paint)
+        paint.shader = null
+    }
+
+    // 9. DRAMATIC CINEMATIC HERO SCENE
+    private fun drawCinematicHeroScene(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        t: Float,
+        frameIndex: Int,
+        prompt: String
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.shader = LinearGradient(0f, 0f, 0f, height.toFloat(),
+            intArrayOf(Color.rgb(35, 25, 65), Color.rgb(90, 45, 95), Color.rgb(210, 110, 60)),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+
+        // Big Majestic Moon
+        val mx = width * 0.75f
+        val my = height * 0.3f
+        paint.shader = RadialGradient(mx, my, width * 0.2f,
+            intArrayOf(Color.argb(230, 255, 245, 220), Color.argb(100, 255, 180, 100), Color.TRANSPARENT),
+            floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawCircle(mx, my, width * 0.2f, paint)
+        paint.shader = null
+
+        // Cliff Hill
+        paint.color = Color.rgb(18, 15, 25)
+        val hillPath = Path().apply {
+            moveTo(0f, height * 0.65f)
+            quadTo(width * 0.35f, height * 0.60f, width * 0.55f, height * 0.72f)
+            lineTo(width.toFloat(), height * 0.75f)
+            lineTo(width.toFloat(), height.toFloat())
+            lineTo(0f, height.toFloat())
+            close()
         }
+        canvas.drawPath(hillPath, paint)
+
+        // Hero Standing on Cliff with Flowing Cape
+        val hx = width * 0.32f
+        val hy = height * 0.61f
+        paint.color = Color.rgb(10, 8, 15)
+        canvas.drawCircle(hx, hy - 40f, 9f, paint) // Head
+        paint.strokeWidth = 6f
+        canvas.drawLine(hx, hy - 32f, hx, hy, paint) // Body
+
+        // Flowing Cape
+        paint.color = Color.rgb(220, 38, 38)
+        val cape = Path().apply {
+            moveTo(hx - 2f, hy - 30f)
+            val flap = sin(t * 12.0).toFloat() * 12f
+            quadTo(hx - 25f, hy - 20f + flap, hx - 40f, hy - 10f + flap)
+            lineTo(hx - 2f, hy - 15f)
+            close()
+        }
+        canvas.drawPath(cape, paint)
     }
 
     private fun drawCinematicLetterbox(
