@@ -22,17 +22,18 @@ interface GeminiApiService {
         @Body request: GeminiGenerateContentRequest
     ): GeminiGenerateContentResponse
 
-    @POST("v1beta/models/{model}:generateVideos")
+    @POST("v1beta/models/{model}:predictLongRunning")
+    suspend fun predictLongRunningVeo(
+        @Path("model") model: String,
+        @Query("key") apiKey: String,
+        @Body request: VeoPredictLongRunningRequest
+    ): VeoOperationResponse
+
+    @POST("v1beta/models/{model}:predictLongRunning")
     suspend fun generateVideoVeo(
         @Path("model") model: String,
         @Query("key") apiKey: String,
-        @Body request: VeoGenerateVideoRequest
-    ): VeoOperationResponse
-
-    @POST("v1beta/models/veo-3.1-fast-generate-preview:generateVideos")
-    suspend fun generateVideoVeoFast(
-        @Query("key") apiKey: String,
-        @Body request: VeoGenerateVideoRequest
+        @Body request: VeoPredictLongRunningRequest
     ): VeoOperationResponse
 
     @GET("v1beta/{operationName}")

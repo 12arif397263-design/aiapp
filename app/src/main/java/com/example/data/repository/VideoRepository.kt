@@ -20,9 +20,10 @@ import com.example.data.remote.GeminiImageConfig
 import com.example.data.remote.GeminiPart
 import com.example.data.director.ParsedPromptDirective
 import com.example.data.remote.RetrofitClient
-import com.example.data.remote.VeoGenerateVideoRequest
+import com.example.data.remote.VeoPredictLongRunningRequest
+import com.example.data.remote.VeoInstance
+import com.example.data.remote.VeoParameters
 import com.example.data.remote.VeoOperationResponse
-import com.example.data.remote.VeoVideoConfig
 import android.media.MediaMetadataRetriever
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -351,31 +352,47 @@ class VideoRepository(private val context: Context) {
         val videoFile = File(videosDir, "veo_${timestamp}.mp4")
         val thumbFile = File(thumbsDir, "veo_thumb_${timestamp}.jpg")
 
-        Log.d("VideoRepository", "REQUEST STARTED: Calling ${model.modelTag}")
-        onProgress(0.08f, "Submitting video generation request to ${model.name}...")
-
-        val targetDuration = durationSeconds.coerceIn(4, 10)
-        val validAspectRatio = when (aspectRatio) {
-            "9:16" -> "9:16"
-            "1:1" -> "1:1"
-            "4:3" -> "4:3"
-            else -> "16:9"
+        // 1. Duration Validation: Google Veo 3.1 supports 4, 6, 8 seconds
+        val validDurationString = when (durationSeconds) {
+            4 -> "4"
+            6 -> "6"
+            else -> "8" // Map 10, 8, or any other value to "8"
         }
 
-        val request = VeoGenerateVideoRequest(
-            prompt = finalVideoPrompt,
-            durationSeconds = targetDuration,
-            aspectRatio = validAspectRatio,
-            fps = 24,
-            videoConfig = VeoVideoConfig(
-                durationSeconds = targetDuration,
+        // 2. Aspect Ratio Validation: Google Veo supports 16:9 and 9:16
+        val validAspectRatio = when (aspectRatio) {
+            "9:16" -> "9:16"
+            else -> "16:9" // 1:1 and 4:3 map to 16:9 for Veo
+        }
+
+        // 3. Resolution Validation: 720p or 1080p
+        val validResolution = if (resolution.contains("1080") || model.id == "veo_3_1_hd") "1080p" else "720p"
+
+        val request = VeoPredictLongRunningRequest(
+            instances = listOf(
+                VeoInstance(prompt = finalVideoPrompt)
+            ),
+            parameters = VeoParameters(
                 aspectRatio = validAspectRatio,
-                fps = 24
+                durationSeconds = validDurationString,
+                resolution = validResolution
             )
         )
 
+        val escapedPrompt = finalVideoPrompt.replace("\"", "\\\"").replace("\n", " ")
+        val requestJson = """{"instances":[{"prompt":"$escapedPrompt"}],"parameters":{"aspectRatio":"$validAspectRatio","durationSeconds":"$validDurationString","resolution":"$validResolution"}}"""
+
+        // SAFE DEBUG LOGS (Never log API keys or auth credentials)
+        Log.d("VideoRepository", "USER PROMPT: $prompt")
+        Log.d("VideoRepository", "FINAL PROMPT: $finalVideoPrompt")
+        Log.d("VideoRepository", "MODEL: ${model.modelTag}")
+        Log.d("VideoRepository", "ENDPOINT: predictLongRunning")
+        Log.d("VideoRepository", "REQUEST BODY: $requestJson")
+
+        onProgress(0.08f, "Submitting video generation request to ${model.name}...")
+
         val initialResponse = try {
-            RetrofitClient.geminiService.generateVideoVeo(
+            RetrofitClient.geminiService.predictLongRunningVeo(
                 model = model.modelTag,
                 apiKey = apiKey,
                 request = request
