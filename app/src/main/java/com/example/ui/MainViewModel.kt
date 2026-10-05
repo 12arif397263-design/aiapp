@@ -211,24 +211,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAspectRatio(ratio: com.example.data.model.AspectRatioOption) {
-        _selectedAspectRatio.value = ratio
+        val validId = if (ratio.id == "16:9") "16:9" else "9:16"
+        val target = VideoPresets.ASPECT_RATIOS.find { it.id == validId } ?: ratio
+        _selectedAspectRatio.value = target
     }
 
     fun setDuration(duration: Int) {
-        if (duration > 8) {
+        // Requirement 5: If resolution is 1080p or 4k, force duration to 8 seconds
+        if (_selectedResolution.value in listOf("1080p", "4k")) {
             _selectedDuration.value = 8
             Toast.makeText(
                 getApplication(),
-                if (_isBengali.value) "Veo প্রতি জেনারেশনে সর্বোচ্চ ৮ সেকেন্ড সমর্থন করে।" else "Veo supports up to 8 seconds per generation.",
+                if (_isBengali.value) "${_selectedResolution.value} রেজোলিউশনে সময়কাল ৮ সেকেন্ড নির্ধারিত।" else "${_selectedResolution.value} resolution requires 8 seconds duration.",
                 Toast.LENGTH_SHORT
             ).show()
-        } else {
-            _selectedDuration.value = duration
+            return
         }
+
+        // Requirement 3: Only allow 4, 6, 8. If 10 selected, automatically use 8.
+        val valid = when (duration) {
+            4 -> 4
+            6 -> 6
+            else -> 8
+        }
+        _selectedDuration.value = valid
     }
 
     fun setResolution(res: String) {
-        _selectedResolution.value = res
+        // Requirement 5: Support 720p, 1080p, 4k. If 1080p or 4k, force duration to 8.
+        val validRes = when (res.lowercase()) {
+            "4k" -> "4k"
+            "1080p" -> "1080p"
+            else -> "720p"
+        }
+        _selectedResolution.value = validRes
+        if (validRes in listOf("1080p", "4k")) {
+            _selectedDuration.value = 8
+        }
     }
 
     fun setStyle(style: com.example.data.model.VideoStyle) {
@@ -288,35 +307,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.saveUserApiKey(key.trim())
     }
 
-    fun testApiConnection(onResult: (Boolean, String) -> Unit) {
+    // Requirement 12: Add a "Test Veo API" button in Settings.
+    // When pressed, use saved API key, make minimal Veo API request, show API connected OR exact Google API error.
+    fun testVeoApiConnection(onResult: (Boolean, String) -> Unit) {
         val key = repository.getEffectiveApiKey()
         if (key.isBlank()) {
-            onResult(false, if (_isBengali.value) "কোনো এপিআই কি দেওয়া হয়নি" else "No API key configured")
+            onResult(false, if (_isBengali.value) "সেটিংসে কোনো এপিআই কি পাওয়া যায়নি। অনুগ্রহ করে আপনার Gemini API Key লিখুন।" else "No API key configured. Please enter your Gemini API key in Settings.")
             return
         }
 
         viewModelScope.launch {
-            try {
-                val req = GeminiGenerateContentRequest(
-                    contents = listOf(
-                        GeminiContent(
-                            parts = listOf(GeminiPart(text = "Hello")),
-                            role = "user"
-                        )
-                    )
-                )
-                val res = RetrofitClient.geminiService.generateContent(key, req)
-                if (res.candidates?.isNotEmpty() == true) {
-                    onResult(true, if (_isBengali.value) "এপিআই কি সফলভাবে কানেক্ট হয়েছে!" else "API Key verified and active!")
-                } else if (res.error != null) {
-                    onResult(false, res.error.message ?: "API error")
-                } else {
-                    onResult(true, "Connected successfully")
-                }
-            } catch (e: Exception) {
-                onResult(false, e.localizedMessage ?: "Connection failed")
-            }
+            val (success, message) = repository.testVeoApiConnection(key)
+            onResult(success, message)
         }
+    }
+
+    fun testApiConnection(onResult: (Boolean, String) -> Unit) {
+        testVeoApiConnection(onResult)
     }
 
     fun generateVideo() {

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.AllInclusive
@@ -91,6 +92,7 @@ fun GeneratorScreen(
     val selectedMotion by viewModel.selectedMotion.collectAsState()
     val selectedAspectRatio by viewModel.selectedAspectRatio.collectAsState()
     val selectedDuration by viewModel.selectedDuration.collectAsState()
+    val selectedResolution by viewModel.selectedResolution.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
     val selectedArchitecture by viewModel.selectedArchitecture.collectAsState()
     val userApiKey by viewModel.userApiKey.collectAsState()
@@ -107,6 +109,49 @@ fun GeneratorScreen(
             stageBn = gen.stageBn,
             isBengali = isBengali,
             onDismiss = { viewModel.dismissGenerationState() }
+        )
+    }
+
+    // Requirement 11 & 13: Detailed Error Dialog showing actual Google Veo error
+    if (generationState is GenerationUiState.Error) {
+        val err = generationState as GenerationUiState.Error
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.dismissGenerationState() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Error",
+                        tint = Color(0xFFEF4444)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isBengali) "ভিডিও তৈরিতে ত্রুটি" else "Video Generation Error",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = if (isBengali) err.messageBn else err.message,
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.9f),
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissGenerationState() },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonViolet),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(if (isBengali) "ঠিক আছে" else "Dismiss")
+                }
+            },
+            containerColor = CinemaSurface,
+            shape = RoundedCornerShape(16.dp)
         )
     }
 
@@ -152,7 +197,7 @@ fun GeneratorScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.Bottom
                 ) {
-                    // Unlimited Badge
+                    // Veo 3.1 Badge
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = AmberGlow.copy(alpha = 0.2f),
@@ -163,14 +208,14 @@ fun GeneratorScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AllInclusive,
-                                contentDescription = "Unlimited",
+                                imageVector = Icons.Default.Videocam,
+                                contentDescription = "Veo",
                                 tint = AmberGlow,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isBengali) "আনলিমিটেড জেনারেশন অ্যাক্টিভ" else "Unlimited Access Active",
+                                text = "Google DeepMind Veo 3.1",
                                 color = AmberGlow,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -833,21 +878,71 @@ fun GeneratorScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Duration Chips
+                    // Resolution Chips (Requirement 5)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (isBengali) "ভিডিও সময়কাল" else "Duration",
+                            text = if (isBengali) "রেজোলিউশন (Resolution)" else "Resolution",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White.copy(alpha = 0.9f)
                         )
 
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(3, 4, 5, 8, 10).forEach { dur ->
+                            listOf("720p", "1080p", "4k").forEach { res ->
+                                val isSelected = res.equals(selectedResolution, ignoreCase = true)
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { viewModel.setResolution(res) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) CyberCyan.copy(alpha = 0.2f) else CinemaSurfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSelected) CyberCyan else Color.Transparent
+                                    )
+                                ) {
+                                    Text(
+                                        text = res.uppercase(),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) CyberCyan else Color.White.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Duration Chips (Requirement 3 & 5: Only allow 4, 6, 8. Forced to 8 if 1080p/4k)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = if (isBengali) "ভিডিও সময়কাল (Duration)" else "Duration",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White.copy(alpha = 0.9f)
+                            )
+                            if (selectedResolution in listOf("1080p", "4k")) {
+                                Text(
+                                    text = if (isBengali) "(১০৮০p/৪K-তে ৮ সেকেন্ড নির্দিষ্ট)" else "Locked to 8s for HD/4K",
+                                    fontSize = 10.sp,
+                                    color = AmberGlow
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(4, 6, 8).forEach { dur ->
                                 val isSelected = dur == selectedDuration
                                 Surface(
                                     modifier = Modifier
@@ -948,7 +1043,7 @@ fun GeneratorScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = if (isBengali) "🚀 আনলিমিটেড ভিডিও তৈরি করুন" else "🚀 Generate Video (Unlimited Free)",
+                            text = if (isBengali) "🚀 গুগল ভিও দিয়ে ভিডিও তৈরি করুন" else "🚀 Generate AI Video (Google Veo)",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White

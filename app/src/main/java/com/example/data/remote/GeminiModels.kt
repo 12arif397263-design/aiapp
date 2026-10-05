@@ -61,10 +61,10 @@ data class VeoInstance(
 )
 
 data class VeoParameters(
-    val aspectRatio: String = "9:16",
-    val durationSeconds: Int = 8,
-    val resolution: String = "720p",
-    val numberOfVideos: Int = 1
+    val aspectRatio: String? = "9:16",
+    val durationSeconds: String? = "8",
+    val resolution: String? = "720p",
+    val numberOfVideos: Int? = 1
 )
 
 typealias VeoGenerateVideoRequest = VeoPredictLongRunningRequest
@@ -109,37 +109,18 @@ data class VeoOperationResponse(
     val metadata: Map<String, Any?>? = null
 ) {
     fun extractVideoUri(): String? {
-        // 1. Official: response.generateVideoResponse.generatedSamples[0].video.uri / downloadUri
-        response?.generateVideoResponse?.generatedSamples?.firstOrNull()?.video?.let { v ->
-            val uri = v.downloadUri ?: v.uri
-            if (!uri.isNullOrBlank()) return uri
-        }
-        // 2. Direct generatedSamples fallback
-        response?.generatedSamples?.firstOrNull()?.video?.let { v ->
-            val uri = v.downloadUri ?: v.uri
-            if (!uri.isNullOrBlank()) return uri
-        }
-        // 3. Compatibility fallback: generatedVideos
-        response?.generateVideoResponse?.generatedVideos?.firstOrNull()?.video?.let { v ->
-            val uri = v.downloadUri ?: v.uri
-            if (!uri.isNullOrBlank()) return uri
-        }
-        response?.generatedVideos?.firstOrNull()?.video?.let { v ->
-            val uri = v.downloadUri ?: v.uri
-            if (!uri.isNullOrBlank()) return uri
-        }
-        // 4. Direct video payload
-        response?.video?.let { v ->
-            val uri = v.downloadUri ?: v.uri
-            if (!uri.isNullOrBlank()) return uri
-        }
-        if (!response?.videoUri.isNullOrBlank()) return response?.videoUri
-        if (!response?.uri.isNullOrBlank()) return response?.uri
+        // Requirement 8: Use exactly response.generateVideoResponse.generatedSamples[0].video.uri
+        val directUri = response?.generateVideoResponse?.generatedSamples?.firstOrNull()?.video?.uri
+        if (!directUri.isNullOrBlank()) return directUri
 
-        val metaUri = metadata?.get("videoUri") as? String
-        if (!metaUri.isNullOrBlank()) return metaUri
+        val downloadUri = response?.generateVideoResponse?.generatedSamples?.firstOrNull()?.video?.downloadUri
+        if (!downloadUri.isNullOrBlank()) return downloadUri
 
-        return null
+        val sampleUri = response?.generatedSamples?.firstOrNull()?.video?.uri
+            ?: response?.generatedSamples?.firstOrNull()?.video?.downloadUri
+        if (!sampleUri.isNullOrBlank()) return sampleUri
+
+        return response?.videoUri ?: response?.uri
     }
 
     fun extractVideoBase64(): String? {

@@ -369,18 +369,24 @@ class VideoRepository(private val context: Context) {
         val videoFile = File(videosDir, "veo_${timestamp}.mp4")
         val thumbFile = File(thumbsDir, "veo_thumb_${timestamp}.jpg")
 
-        // 1. Duration Validation: Google Veo 3.1 supports 4, 6, 8 seconds
-        val validDuration = when (durationSeconds) {
-            4 -> 4
-            6 -> 6
-            else -> 8 // Map 10, 8, or any other value to 8
+        // 1. Resolution Validation: 720p, 1080p, 4k (Requirement 5)
+        val validResolution = when (resolution.lowercase()) {
+            "4k" -> "4k"
+            "1080p" -> "1080p"
+            else -> "720p"
         }
 
-        // 2. Aspect Ratio Validation: Google Veo supports 9:16 (default) and 16:9
-        val validAspectRatio = if (aspectRatio == "16:9") "16:9" else "9:16"
+        // 2. Duration Validation: 4, 6, 8 seconds (Requirement 3 & 5)
+        // If resolution is 1080p or 4k, force duration to 8 seconds. If user selects 10, use 8.
+        val validDuration = when {
+            validResolution in listOf("1080p", "4k") -> 8
+            durationSeconds == 4 -> 4
+            durationSeconds == 6 -> 6
+            else -> 8
+        }
 
-        // 3. Resolution Validation: 720p or 1080p
-        val validResolution = if (resolution.contains("1080") || model.id == "veo_3_1_hd") "1080p" else "720p"
+        // 3. Aspect Ratio Validation: Google Veo supports 9:16 (default) and 16:9 (Requirement 4)
+        val validAspectRatio = if (aspectRatio == "16:9") "16:9" else "9:16"
 
         val request = VeoPredictLongRunningRequest(
             instances = listOf(
@@ -388,16 +394,16 @@ class VideoRepository(private val context: Context) {
             ),
             parameters = VeoParameters(
                 aspectRatio = validAspectRatio,
-                durationSeconds = validDuration,
+                durationSeconds = validDuration.toString(),
                 resolution = validResolution,
                 numberOfVideos = 1
             )
         )
 
         val escapedPrompt = finalVideoPrompt.replace("\"", "\\\"").replace("\n", " ")
-        val requestJson = """{"instances":[{"prompt":"$escapedPrompt"}],"parameters":{"aspectRatio":"$validAspectRatio","durationSeconds":$validDuration,"resolution":"$validResolution","numberOfVideos":1}}"""
+        val requestJson = """{"instances":[{"prompt":"$escapedPrompt"}],"parameters":{"aspectRatio":"$validAspectRatio","durationSeconds":"$validDuration","resolution":"$validResolution","numberOfVideos":1}}"""
 
-        // SAFE DEBUG LOGS (Never log API keys or auth credentials)
+        // SAFE DEBUG LOGS (Never log API keys or auth credentials - Requirement 10)
         Log.d("VideoRepository", "USER PROMPT: $prompt")
         Log.d("VideoRepository", "FINAL PROMPT: $finalVideoPrompt")
         Log.d("VideoRepository", "MODEL: ${model.modelTag}")
@@ -427,11 +433,12 @@ class VideoRepository(private val context: Context) {
                 request = request
             )
         } catch (e: retrofit2.HttpException) {
-            val errBody = e.response()?.errorBody()?.string() ?: e.message()
-            Log.e("VideoRepository", "Veo API HTTP Error: ${e.code()} - $errBody")
-            currentDebugInfo = currentDebugInfo.copy(generationStatus = "Failed: ${e.code()} - $errBody")
+            val errBody = e.response()?.errorBody()?.string()
+            val friendlyError = parseGoogleApiError(e.code(), errBody)
+            Log.e("VideoRepository", "Veo API HTTP Error: $friendlyError")
+            currentDebugInfo = currentDebugInfo.copy(generationStatus = "Failed: $friendlyError")
             onDebugUpdate?.invoke(currentDebugInfo)
-            throw IllegalStateException("Google Veo Request Failed (${e.code()}): $errBody")
+            throw IllegalStateException(friendlyError)
         } catch (e: Exception) {
             Log.e("VideoRepository", "Veo API Network Error: ${e.message}")
             currentDebugInfo = currentDebugInfo.copy(generationStatus = "Failed: ${e.message}")
@@ -596,26 +603,93 @@ class VideoRepository(private val context: Context) {
         entity.copy(id = newId)
     }
 
+    companion object {
+        fun parseGoogleApiError(code: Int, rawBody: String?): String {
+            var message = ""
+            var status = ""
+            if (!rawBody.isNullOrBlank()) {
+                try {
+                    val json = org.json.JSONObject(rawBody)
+                    if (json.has("error")) {
+                        val err = json.getJSONObject("error")
+                        status = err.optString("status", "")
+                        message = err.optString("message", "")
+                    }
+                } catch (e: Exception) {
+                    message = rawBody.take(400)
+                }
+            }
+            if (message.isBlank()) {
+                message = rawBody ?: "HTTP $code Error"
+            }
+
+            val isAccessOrQuota = code in listOf(400, 401, 403, 404, 429) ||
+                    status in listOf("PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION") ||
+                    message.contains("billing", ignoreCase = true) ||
+                    message.contains("quota", ignoreCase = true) ||
+                    message.contains("API has not been used", ignoreCase = true) ||
+                    message.contains("disabled", ignoreCase = true)
+
+            val builder = StringBuilder()
+            builder.append("Google Veo API Error ($code")
+            if (status.isNotBlank()) builder.append(" - $status")
+            builder.append("):\n$message")
+
+            if (isAccessOrQuota) {
+                builder.append("\n\n[Google Cloud Notice]: Google DeepMind Veo video generation requires an active Google Cloud project with Generative Language API access and billing enabled. Please verify your project billing and API access at console.cloud.google.com.")
+            }
+            return builder.toString()
+        }
+    }
+
+    suspend fun testVeoApiConnection(apiKey: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            return@withContext Pair(false, "API Key is empty. Please configure your Gemini API key in Settings.")
+        }
+        try {
+            val testRequest = VeoPredictLongRunningRequest(
+                instances = listOf(VeoInstance(prompt = "minimal test prompt")),
+                parameters = VeoParameters(
+                    aspectRatio = "9:16",
+                    durationSeconds = "8",
+                    resolution = "720p",
+                    numberOfVideos = 1
+                )
+            )
+            val res = RetrofitClient.geminiService.predictLongRunningVeo(
+                model = "veo-3.1-fast-generate-preview",
+                apiKey = apiKey,
+                request = testRequest
+            )
+            if (res.error != null) {
+                val err = "Veo API Error (${res.error.code} - ${res.error.status}): ${res.error.message}"
+                return@withContext Pair(false, err)
+            }
+            Pair(true, "API connected successfully!\nOperation initialized: ${res.name ?: "OK"}")
+        } catch (e: retrofit2.HttpException) {
+            val raw = e.response()?.errorBody()?.string()
+            val parsed = parseGoogleApiError(e.code(), raw)
+            Pair(false, parsed)
+        } catch (e: Exception) {
+            Pair(false, "Connection Error: ${e.localizedMessage ?: e.message}")
+        }
+    }
+
     private suspend fun downloadFileFromUri(
         uriString: String,
         apiKey: String,
         destinationFile: File,
         onProgress: (Float, String) -> Unit
     ) = withContext(Dispatchers.IO) {
-        val finalUrl = if (uriString.contains("generativelanguage.googleapis.com") && !uriString.contains("key=")) {
-            if (uriString.contains("?")) "$uriString&key=$apiKey" else "$uriString?key=$apiKey"
-        } else {
-            uriString
-        }
-
+        // Requirement 9: Download the returned video URI with x-goog-api-key: API_KEY. Do NOT append ?key=API_KEY to the URL.
         val request = Request.Builder()
-            .url(finalUrl)
+            .url(uriString)
             .addHeader("x-goog-api-key", apiKey)
             .build()
 
         val response = RetrofitClient.okHttpClient.newCall(request).execute()
         if (!response.isSuccessful) {
-            val errBody = response.body?.string()?.take(200)
+            val errBody = response.body?.string()?.take(300)
             throw IllegalStateException("Failed to download generated video from cloud (HTTP ${response.code}: $errBody)")
         }
 

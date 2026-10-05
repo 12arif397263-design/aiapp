@@ -41,7 +41,7 @@ class VeoGenerationPipelineTest {
             instances = listOf(VeoInstance(prompt = prompt)),
             parameters = VeoParameters(
                 aspectRatio = "16:9",
-                durationSeconds = 8,
+                durationSeconds = "8",
                 resolution = "1080p"
             )
         )
@@ -54,7 +54,7 @@ class VeoGenerationPipelineTest {
         assertTrue(json.contains(prompt))
         assertTrue(json.contains("\"parameters\":{"))
         assertTrue(json.contains("\"aspectRatio\":\"16:9\""))
-        assertTrue(json.contains("\"durationSeconds\":8"))
+        assertTrue(json.contains("\"durationSeconds\":\"8\""))
         assertTrue(json.contains("\"resolution\":\"1080p\""))
     }
 
@@ -136,15 +136,24 @@ class VeoGenerationPipelineTest {
                 instances = listOf(VeoInstance(prompt = prompt)),
                 parameters = VeoParameters(
                     aspectRatio = "16:9",
-                    durationSeconds = 8,
+                    durationSeconds = "8",
                     resolution = "1080p"
                 )
             )
             val json = adapter.toJson(request)
             assertTrue(json.contains("\"instances\":[{\"prompt\":"))
-            assertTrue(json.contains("\"durationSeconds\":8"))
+            assertTrue(json.contains("\"durationSeconds\":\"8\""))
             assertTrue(json.contains("\"parameters\":{"))
             assertEquals(prompt, request.instances[0].prompt)
         }
+    }
+
+    @Test
+    fun testParseGoogleApiErrorFormatting() {
+        val jsonError = """{"error":{"code":403,"message":"Generative Language API has not been used in project 12345 before or it is disabled.","status":"PERMISSION_DENIED"}}"""
+        val formatted = com.example.data.repository.VideoRepository.parseGoogleApiError(403, jsonError)
+        assertTrue(formatted.contains("PERMISSION_DENIED"))
+        assertTrue(formatted.contains("Google Cloud Notice"))
+        assertTrue(formatted.contains("403"))
     }
 }

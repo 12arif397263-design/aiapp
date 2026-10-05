@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
@@ -36,8 +38,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -82,6 +86,9 @@ fun SettingsScreen(
     val savedApiKey by viewModel.userApiKey.collectAsState()
 
     var inputApiKey by remember(savedApiKey) { mutableStateOf(savedApiKey) }
+    var isTestingVeo by remember { mutableStateOf(false) }
+    var testResultText by remember { mutableStateOf<String?>(null) }
+    var testResultSuccess by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -175,9 +182,9 @@ fun SettingsScreen(
 
                     Text(
                         text = if (isBengali)
-                            "আপনি যেকোনো সময় যতখুশি তত ভিডিও সম্পূর্ণ ফ্রিতে এইচডি এবং ৪কে ফরম্যাটে তৈরি ও ডাউনলোড করতে পারবেন। কোনো ওয়াটারমার্ক বা ক্রেডিট লিমিট নেই!"
+                            "গুগল ডিপমাইন্ডের অফিসিয়াল Veo 3.1 ভিডিও মডেলের মাধ্যমে যেকোনো টেক্সট প্রম্পট থেকে সরাসরি এইচডি এবং সিনেমাটিক ভিডিও তৈরি করুন। ক্লাউড এআই অ্যাক্সেস আপনার গুগল ক্লাউড প্রজেক্ট কোটার ওপর নির্ভরশীল।"
                         else
-                            "Generate and export unlimited high-definition AI videos anytime with no daily quotas, credits, or watermarks.",
+                            "Generate cinematic AI videos directly from text prompts using Google DeepMind Veo 3.1. Cloud AI video generation uses your Google Cloud project quota.",
                         fontSize = 13.sp,
                         color = Color.White.copy(alpha = 0.8f),
                         lineHeight = 18.sp
@@ -194,12 +201,12 @@ fun SettingsScreen(
                             value = "$totalVideos"
                         )
                         StatItem(
-                            label = if (isBengali) "দৈনিক লিমিট" else "Daily Limit",
-                            value = "∞ Unlimited"
+                            label = if (isBengali) "এআই ভিডিও ইঞ্জিন" else "Video Engine",
+                            value = "Google Veo 3.1"
                         )
                         StatItem(
-                            label = if (isBengali) "এক্সপোর্ট কোয়ালিটি" else "Max Quality",
-                            value = "4K / 60 FPS"
+                            label = if (isBengali) "রেজোলিউশন" else "Resolution",
+                            value = "720p / 1080p / 4K"
                         )
                     }
                 }
@@ -538,6 +545,101 @@ fun SettingsScreen(
                             fontSize = 13.sp,
                             color = Color.White
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Requirement 12: Add a "Test Veo API" button in Settings
+                    OutlinedButton(
+                        onClick = {
+                            if (inputApiKey.isNotBlank() && inputApiKey != savedApiKey) {
+                                viewModel.saveUserApiKey(inputApiKey)
+                            }
+                            isTestingVeo = true
+                            testResultText = null
+                            viewModel.testVeoApiConnection { success, message ->
+                                isTestingVeo = false
+                                testResultSuccess = success
+                                testResultText = message
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("test_veo_api_btn"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberCyan),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !isTestingVeo
+                    ) {
+                        if (isTestingVeo) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = CyberCyan,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isBengali) "Veo কানেকশন পরীক্ষা হচ্ছে..." else "Testing Veo Connection...",
+                                fontSize = 13.sp,
+                                color = CyberCyan
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Test Veo API",
+                                tint = CyberCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isBengali) "⚡ Veo API টেস্ট করুন" else "⚡ Test Veo API",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = CyberCyan
+                            )
+                        }
+                    }
+
+                    testResultText?.let { result ->
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (testResultSuccess) EmeraldGreen.copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (testResultSuccess) EmeraldGreen else Color(0xFFEF4444)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (testResultSuccess) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                        contentDescription = "Status",
+                                        tint = if (testResultSuccess) EmeraldGreen else Color(0xFFEF4444),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (testResultSuccess)
+                                            (if (isBengali) "Veo API সফলভাবে সংযুক্ত!" else "Veo API Connected")
+                                        else
+                                            (if (isBengali) "Veo API ত্রুটি বিবরণ" else "Veo API Error Details"),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (testResultSuccess) EmeraldGreen else Color(0xFFEF4444)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = result,
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
