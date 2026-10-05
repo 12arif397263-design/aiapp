@@ -119,29 +119,32 @@ class VeoGenerationPipelineTest {
     }
 
     @Test
-    fun testDurationAndAspectRatioValidationRules() {
-        // Validation: 10s should map to 8s for Veo
-        val selectedDuration = 10
-        val validDuration = when (selectedDuration) {
-            4 -> "4"
-            6 -> "6"
-            else -> "8"
-        }
-        assertEquals("8", validDuration)
+    fun testFiveDistinctPromptsProduceExactVeoRequests() {
+        val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+        val adapter = moshi.adapter(VeoPredictLongRunningRequest::class.java)
 
-        // Validation: 1:1 or 4:3 should map to 16:9 for Veo
-        val unsupportedRatio = "1:1"
-        val validRatio = when (unsupportedRatio) {
-            "9:16" -> "9:16"
-            else -> "16:9"
-        }
-        assertEquals("16:9", validRatio)
+        val prompts = listOf(
+            "Create a 10-second ultra-realistic live-action Bengali village horror video. A terrifying female ghost with fiery red eyes slowly appears outside an abandoned house at midnight.",
+            "Create a 10-second funny 3D cartoon video of a Bengali boy riding a bicycle through a busy village market while eating a mango.",
+            "Create a 10-second cinematic realistic video of a black sports car driving through a rainy city at night with neon reflections.",
+            "Create a 10-second fantasy video of a huge blue dragon flying above an ancient castle at sunset.",
+            "Create a 10-second realistic documentary video of a fisherman rowing a wooden boat across a river at sunrise."
+        )
 
-        val reelsRatio = "9:16"
-        val validReelsRatio = when (reelsRatio) {
-            "9:16" -> "9:16"
-            else -> "16:9"
+        for (prompt in prompts) {
+            val request = VeoPredictLongRunningRequest(
+                instances = listOf(VeoInstance(prompt = prompt)),
+                parameters = VeoParameters(
+                    aspectRatio = "16:9",
+                    durationSeconds = "8",
+                    resolution = "1080p"
+                )
+            )
+            val json = adapter.toJson(request)
+            assertTrue(json.contains("\"instances\":[{\"prompt\":"))
+            assertTrue(json.contains("\"durationSeconds\":\"8\""))
+            assertTrue(json.contains("\"parameters\":{"))
+            assertEquals(prompt, request.instances[0].prompt)
         }
-        assertEquals("9:16", validReelsRatio)
     }
 }

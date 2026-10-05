@@ -235,11 +235,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             try {
-                val enhanced = if (_enhancedPrompt.value.isNotBlank()) {
-                    _enhancedPrompt.value
-                } else {
-                    repository.enhancePrompt(currentPrompt, _selectedStyle.value.id, _isBengali.value)
-                }
+                val enhanced = _enhancedPrompt.value.trim()
 
                 val project = repository.createVideoProject(
                     prompt = currentPrompt,

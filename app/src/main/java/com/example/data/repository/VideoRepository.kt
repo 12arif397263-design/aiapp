@@ -216,7 +216,7 @@ class VideoRepository(private val context: Context) {
     ): VideoProjectEntity = withContext(Dispatchers.IO) {
         val apiKey = getEffectiveApiKey()
         val directive = AiPromptDirector.analyzeAndDirect(prompt)
-        val finalVideoPrompt = enhancedPrompt.ifBlank { directive.enhancedCinematicPrompt }
+        val finalVideoPrompt = if (enhancedPrompt.isNotBlank()) enhancedPrompt else prompt
         val model = VideoPresets.MODELS.find { it.id == modelId } ?: VideoPresets.MODELS[0]
 
         // SAFE DEBUG LOGS (Never log API keys or auth credentials)
