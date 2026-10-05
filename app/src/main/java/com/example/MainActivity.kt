@@ -9,10 +9,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,18 +19,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.MovieCreation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
@@ -63,16 +57,14 @@ import com.example.ui.screens.GeneratorScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.PlayerScreen
 import com.example.ui.screens.SettingsScreen
-import com.example.ui.screens.StoryStudioScreen
-import com.example.ui.theme.AmberGlow
 import com.example.ui.theme.CardBorder
 import com.example.ui.theme.CinemaBackground
 import com.example.ui.theme.CinemaSurface
 import com.example.ui.theme.CinemaSurfaceVariant
-import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.EmeraldGreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.NeonViolet
+import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.TextSecondary
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -104,64 +96,64 @@ fun MainAppContent(viewModel: MainViewModel) {
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = NeonViolet,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Videocam,
                                         contentDescription = "Logo",
                                         tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "OmniVideo AI",
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White
+                                    text = "Veo Studio",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
                                 )
                                 Text(
-                                    text = if (isBengali) "আনলিমিটেড এআই ভিডিও জেনারেটর" else "Unlimited AI Video Studio",
-                                    fontSize = 10.sp,
-                                    color = CyberCyan,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = if (isBengali) "এআই ভিডিও জেনারেটর" else "AI Video Generator",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    fontWeight = FontWeight.Normal
                                 )
                             }
                         }
                     },
                     actions = {
-                        // Quick Language Switcher Pill
+                        // Language switcher
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
+                            shape = RoundedCornerShape(16.dp),
                             color = CinemaSurfaceVariant,
                             border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
                             modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { viewModel.toggleLanguage() }
                                 .padding(end = 12.dp)
                                 .testTag("top_language_toggle")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Language,
                                     contentDescription = "Toggle Language",
-                                    tint = if (isBengali) AmberGlow else CyberCyan,
+                                    tint = NeonViolet,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (isBengali) "বাংলা" else "EN",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
                                 )
                             }
                         }
@@ -177,17 +169,16 @@ fun MainAppContent(viewModel: MainViewModel) {
             if (currentScreen != AppScreen.PLAYER) {
                 NavigationBar(
                     containerColor = CinemaSurface,
-                    tonalElevation = 8.dp,
+                    tonalElevation = 0.dp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(width = 1.dp, color = CardBorder)
                         .testTag("main_bottom_nav")
                 ) {
                     val navItems = listOf(
-                        Triple(AppScreen.GENERATOR, Icons.Default.AutoAwesome, if (isBengali) "স্টুডিও" else "Studio"),
-                        Triple(AppScreen.STORY_STUDIO, Icons.Default.MovieCreation, if (isBengali) "স্টোরি এআই" else "Story"),
+                        Triple(AppScreen.GENERATOR, Icons.Default.AutoAwesome, if (isBengali) "তৈরি করুন" else "Create"),
                         Triple(AppScreen.LIBRARY, Icons.Default.VideoLibrary, if (isBengali) "লাইব্রেরি" else "Library"),
-                        Triple(AppScreen.SETTINGS, Icons.Default.Settings, if (isBengali) "ভিআইপি পাস" else "VIP Pass")
+                        Triple(AppScreen.SETTINGS, Icons.Default.Settings, if (isBengali) "সেটিংস" else "Settings")
                     )
 
                     navItems.forEach { (screen, icon, label) ->
@@ -210,11 +201,11 @@ fun MainAppContent(viewModel: MainViewModel) {
                                 )
                             },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NeonViolet,
-                                selectedTextColor = NeonViolet,
-                                indicatorColor = NeonViolet.copy(alpha = 0.2f),
-                                unselectedIconColor = Color.White.copy(alpha = 0.5f),
-                                unselectedTextColor = Color.White.copy(alpha = 0.5f)
+                                selectedIconColor = Color.White,
+                                selectedTextColor = Color.White,
+                                indicatorColor = NeonViolet,
+                                unselectedIconColor = TextSecondary,
+                                unselectedTextColor = TextSecondary
                             ),
                             modifier = Modifier.testTag("nav_item_${screen.name.lowercase()}")
                         )
@@ -235,10 +226,10 @@ fun MainAppContent(viewModel: MainViewModel) {
             ) { screen ->
                 when (screen) {
                     AppScreen.GENERATOR -> GeneratorScreen(viewModel = viewModel)
-                    AppScreen.STORY_STUDIO -> StoryStudioScreen(viewModel = viewModel)
                     AppScreen.LIBRARY -> LibraryScreen(viewModel = viewModel)
                     AppScreen.SETTINGS -> SettingsScreen(viewModel = viewModel)
                     AppScreen.PLAYER -> PlayerScreen(viewModel = viewModel)
+                    else -> GeneratorScreen(viewModel = viewModel)
                 }
             }
         }

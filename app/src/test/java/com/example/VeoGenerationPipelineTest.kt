@@ -41,7 +41,7 @@ class VeoGenerationPipelineTest {
             instances = listOf(VeoInstance(prompt = prompt)),
             parameters = VeoParameters(
                 aspectRatio = "16:9",
-                durationSeconds = "8",
+                durationSeconds = 8,
                 resolution = "1080p"
             )
         )
@@ -54,7 +54,7 @@ class VeoGenerationPipelineTest {
         assertTrue(json.contains(prompt))
         assertTrue(json.contains("\"parameters\":{"))
         assertTrue(json.contains("\"aspectRatio\":\"16:9\""))
-        assertTrue(json.contains("\"durationSeconds\":\"8\""))
+        assertTrue(json.contains("\"durationSeconds\":8"))
         assertTrue(json.contains("\"resolution\":\"1080p\""))
     }
 
@@ -136,13 +136,13 @@ class VeoGenerationPipelineTest {
                 instances = listOf(VeoInstance(prompt = prompt)),
                 parameters = VeoParameters(
                     aspectRatio = "16:9",
-                    durationSeconds = "8",
+                    durationSeconds = 8,
                     resolution = "1080p"
                 )
             )
             val json = adapter.toJson(request)
             assertTrue(json.contains("\"instances\":[{\"prompt\":"))
-            assertTrue(json.contains("\"durationSeconds\":\"8\""))
+            assertTrue(json.contains("\"durationSeconds\":8"))
             assertTrue(json.contains("\"parameters\":{"))
             assertEquals(prompt, request.instances[0].prompt)
         }

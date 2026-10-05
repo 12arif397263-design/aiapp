@@ -81,7 +81,7 @@ object VideoPresets {
             nameBn = "গুগল ভিও ৩.১ ফাস্ট (Veo Video)",
             description = "Official Google DeepMind Video Model - Real cloud AI generated video via Veo API",
             descriptionBn = "গুগল ডিপমাইন্ডের অফিসিয়াল জেনারেটিভ এআই ভিডিও এপিআই",
-            badge = "Google Veo Video",
+            badge = "Veo 3.1 Fast",
             isCloud = true,
             modelTag = "veo-3.1-fast-generate-preview",
             iconName = "veo"
@@ -92,32 +92,10 @@ object VideoPresets {
             nameBn = "গুগল ভিও ৩.১ এইচডি সিনেমা",
             description = "High definition cinematic AI video generation via Veo Cloud API",
             descriptionBn = "ভিও ক্লাউড এপিআইয়ের মাধ্যমে এইচডি সিনেমাটিক এআই ভিডিও",
-            badge = "Google Veo HD",
+            badge = "Veo 3.1 HD",
             isCloud = true,
             modelTag = "veo-3.1-generate-preview",
             iconName = "movie"
-        ),
-        AiVideoModelOption(
-            id = "gemini_2_5_flash_image",
-            name = "Gemini 2.5 Flash Image Synthesis",
-            nameBn = "জেমিনাই ২.৫ ফ্ল্যাশ ইমেজ সিন্থেসিস",
-            description = "Generates high quality AI visuals with client motion synthesis",
-            descriptionBn = "জেমিনাই এআই ইমেজ ফ্রেম সিন্থেসিস",
-            badge = "Image Synthesis",
-            isCloud = true,
-            modelTag = "gemini-2.5-flash-image",
-            iconName = "gemini"
-        ),
-        AiVideoModelOption(
-            id = "gemini_3_1_flash_image",
-            name = "Gemini 3.1 Flash Image (4K)",
-            nameBn = "জেমিনাই ৩.১ ফ্ল্যাশ ইমেজ (৪কে)",
-            description = "Next-gen 4K resolution visual image generation",
-            descriptionBn = "পরবর্তী প্রজন্মের ৪কে রেজোলিউশন ভিজ্যুয়াল",
-            badge = "Image 4K",
-            isCloud = true,
-            modelTag = "gemini-3.1-flash-image-preview",
-            iconName = "sparkles"
         ),
         AiVideoModelOption(
             id = "on_device_neural",
@@ -223,10 +201,8 @@ object VideoPresets {
     )
 
     val ASPECT_RATIOS = listOf(
-        AspectRatioOption("16:9", "16:9 Landscape", 16, 9, 854, 480),
-        AspectRatioOption("9:16", "9:16 Shorts/Reels", 9, 16, 480, 854),
-        AspectRatioOption("1:1", "1:1 Square", 1, 1, 640, 640),
-        AspectRatioOption("4:3", "4:3 Classic", 4, 3, 640, 480)
+        AspectRatioOption("9:16", "9:16 Vertical (Shorts/Reels)", 9, 16, 720, 1280),
+        AspectRatioOption("16:9", "16:9 Landscape (Cinema)", 16, 9, 1280, 720)
     )
 
     val PRESET_PROMPTS = listOf(

@@ -1,8 +1,5 @@
 package com.example.data.remote
 
-import com.squareup.moshi.Json
-import com.squareup.moshi.JsonClass
-
 data class GeminiGenerateContentRequest(
     val contents: List<GeminiContent>,
     val generationConfig: GeminiGenerationConfig? = null
@@ -53,6 +50,7 @@ data class GeminiErrorDetails(
     val status: String? = null
 )
 
+// PART B: OFFICIAL VEO REST REQUEST STRUCTURE
 data class VeoPredictLongRunningRequest(
     val instances: List<VeoInstance>,
     val parameters: VeoParameters
@@ -63,12 +61,45 @@ data class VeoInstance(
 )
 
 data class VeoParameters(
-    val aspectRatio: String = "16:9",
-    val durationSeconds: String = "8",
-    val resolution: String? = "1080p"
+    val aspectRatio: String = "9:16",
+    val durationSeconds: Int = 8,
+    val resolution: String = "720p",
+    val numberOfVideos: Int = 1
 )
 
 typealias VeoGenerateVideoRequest = VeoPredictLongRunningRequest
+
+// PART G: OFFICIAL VEO REST RESPONSE STRUCTURE
+data class GeneratedVideoFile(
+    val uri: String? = null,
+    val downloadUri: String? = null,
+    val bytesBase64Encoded: String? = null
+)
+
+typealias VeoVideoPayload = GeneratedVideoFile
+
+data class GeneratedSample(
+    val video: GeneratedVideoFile? = null
+)
+
+typealias VeoGeneratedSample = GeneratedSample
+typealias VeoGeneratedVideo = GeneratedSample
+
+data class GenerateVideoResponse(
+    val generatedSamples: List<GeneratedSample>? = null,
+    val generatedVideos: List<GeneratedSample>? = null
+)
+
+typealias VeoGenerateVideoResponse = GenerateVideoResponse
+
+data class VeoResult(
+    val generateVideoResponse: GenerateVideoResponse? = null,
+    val generatedSamples: List<GeneratedSample>? = null,
+    val generatedVideos: List<GeneratedSample>? = null,
+    val videoUri: String? = null,
+    val uri: String? = null,
+    val video: GeneratedVideoFile? = null
+)
 
 data class VeoOperationResponse(
     val name: String? = null,
@@ -78,36 +109,33 @@ data class VeoOperationResponse(
     val metadata: Map<String, Any?>? = null
 ) {
     fun extractVideoUri(): String? {
-        // 1. response.generateVideoResponse.generatedSamples[0].video.uri / downloadUri
+        // 1. Official: response.generateVideoResponse.generatedSamples[0].video.uri / downloadUri
         response?.generateVideoResponse?.generatedSamples?.firstOrNull()?.video?.let { v ->
             val uri = v.downloadUri ?: v.uri
             if (!uri.isNullOrBlank()) return uri
         }
-        // 2. response.generatedSamples[0].video.uri / downloadUri
+        // 2. Direct generatedSamples fallback
         response?.generatedSamples?.firstOrNull()?.video?.let { v ->
             val uri = v.downloadUri ?: v.uri
             if (!uri.isNullOrBlank()) return uri
         }
-        // 3. response.generateVideoResponse.generatedVideos[0].video.uri / downloadUri
+        // 3. Compatibility fallback: generatedVideos
         response?.generateVideoResponse?.generatedVideos?.firstOrNull()?.video?.let { v ->
             val uri = v.downloadUri ?: v.uri
             if (!uri.isNullOrBlank()) return uri
         }
-        // 4. response.generatedVideos[0].video.uri / downloadUri
         response?.generatedVideos?.firstOrNull()?.video?.let { v ->
             val uri = v.downloadUri ?: v.uri
             if (!uri.isNullOrBlank()) return uri
         }
-        // 5. response.video.uri / downloadUri
+        // 4. Direct video payload
         response?.video?.let { v ->
             val uri = v.downloadUri ?: v.uri
             if (!uri.isNullOrBlank()) return uri
         }
-        // 6. Direct videoUri or uri
         if (!response?.videoUri.isNullOrBlank()) return response?.videoUri
         if (!response?.uri.isNullOrBlank()) return response?.uri
 
-        // 7. Check metadata for videoUri
         val metaUri = metadata?.get("videoUri") as? String
         if (!metaUri.isNullOrBlank()) return metaUri
 
@@ -121,44 +149,12 @@ data class VeoOperationResponse(
         response?.generatedSamples?.firstOrNull()?.video?.bytesBase64Encoded?.let {
             if (it.isNotBlank()) return it
         }
-        response?.generateVideoResponse?.generatedVideos?.firstOrNull()?.video?.bytesBase64Encoded?.let {
-            if (it.isNotBlank()) return it
-        }
-        response?.generatedVideos?.firstOrNull()?.video?.bytesBase64Encoded?.let {
-            if (it.isNotBlank()) return it
-        }
         response?.video?.bytesBase64Encoded?.let {
             if (it.isNotBlank()) return it
         }
         return null
     }
 }
-
-data class VeoResult(
-    val videoUri: String? = null,
-    val uri: String? = null,
-    val generateVideoResponse: VeoGenerateVideoResponse? = null,
-    val generatedSamples: List<VeoGeneratedSample>? = null,
-    val generatedVideos: List<VeoGeneratedSample>? = null,
-    val video: VeoVideoPayload? = null
-)
-
-data class VeoGenerateVideoResponse(
-    val generatedSamples: List<VeoGeneratedSample>? = null,
-    val generatedVideos: List<VeoGeneratedSample>? = null
-)
-
-data class VeoGeneratedSample(
-    val video: VeoVideoPayload? = null
-)
-
-typealias VeoGeneratedVideo = VeoGeneratedSample
-
-data class VeoVideoPayload(
-    val uri: String? = null,
-    val downloadUri: String? = null,
-    val bytesBase64Encoded: String? = null
-)
 
 data class AiVideoPromptAnalysis(
     val title: String,

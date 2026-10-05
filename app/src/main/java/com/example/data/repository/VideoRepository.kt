@@ -34,10 +34,27 @@ import java.io.File
 import java.io.FileOutputStream
 import okhttp3.Request
 
+data class VeoDebugInfo(
+    val userPrompt: String = "",
+    val finalPrompt: String = "",
+    val selectedModel: String = "",
+    val actualApiModel: String = "",
+    val aspectRatio: String = "",
+    val duration: String = "",
+    val resolution: String = "",
+    val operationId: String = "",
+    val generationStatus: String = "Idle",
+    val downloadStatus: String = "Idle"
+)
+
 class VideoRepository(private val context: Context) {
     private val db = AppDatabase.getDatabase(context)
     private val dao = db.videoProjectDao()
     private val prefs = context.getSharedPreferences("omnivideo_prefs", Context.MODE_PRIVATE)
+
+    var onDebugUpdate: ((VeoDebugInfo) -> Unit)? = null
+    var currentDebugInfo = VeoDebugInfo()
+        private set
 
     fun getAllVideos(): Flow<List<VideoProjectEntity>> = dao.getAllVideos()
     fun getFavoriteVideos(): Flow<List<VideoProjectEntity>> = dao.getFavoriteVideos()
@@ -353,17 +370,14 @@ class VideoRepository(private val context: Context) {
         val thumbFile = File(thumbsDir, "veo_thumb_${timestamp}.jpg")
 
         // 1. Duration Validation: Google Veo 3.1 supports 4, 6, 8 seconds
-        val validDurationString = when (durationSeconds) {
-            4 -> "4"
-            6 -> "6"
-            else -> "8" // Map 10, 8, or any other value to "8"
+        val validDuration = when (durationSeconds) {
+            4 -> 4
+            6 -> 6
+            else -> 8 // Map 10, 8, or any other value to 8
         }
 
-        // 2. Aspect Ratio Validation: Google Veo supports 16:9 and 9:16
-        val validAspectRatio = when (aspectRatio) {
-            "9:16" -> "9:16"
-            else -> "16:9" // 1:1 and 4:3 map to 16:9 for Veo
-        }
+        // 2. Aspect Ratio Validation: Google Veo supports 9:16 (default) and 16:9
+        val validAspectRatio = if (aspectRatio == "16:9") "16:9" else "9:16"
 
         // 3. Resolution Validation: 720p or 1080p
         val validResolution = if (resolution.contains("1080") || model.id == "veo_3_1_hd") "1080p" else "720p"
@@ -374,13 +388,14 @@ class VideoRepository(private val context: Context) {
             ),
             parameters = VeoParameters(
                 aspectRatio = validAspectRatio,
-                durationSeconds = validDurationString,
-                resolution = validResolution
+                durationSeconds = validDuration,
+                resolution = validResolution,
+                numberOfVideos = 1
             )
         )
 
         val escapedPrompt = finalVideoPrompt.replace("\"", "\\\"").replace("\n", " ")
-        val requestJson = """{"instances":[{"prompt":"$escapedPrompt"}],"parameters":{"aspectRatio":"$validAspectRatio","durationSeconds":"$validDurationString","resolution":"$validResolution"}}"""
+        val requestJson = """{"instances":[{"prompt":"$escapedPrompt"}],"parameters":{"aspectRatio":"$validAspectRatio","durationSeconds":$validDuration,"resolution":"$validResolution","numberOfVideos":1}}"""
 
         // SAFE DEBUG LOGS (Never log API keys or auth credentials)
         Log.d("VideoRepository", "USER PROMPT: $prompt")
@@ -388,6 +403,20 @@ class VideoRepository(private val context: Context) {
         Log.d("VideoRepository", "MODEL: ${model.modelTag}")
         Log.d("VideoRepository", "ENDPOINT: predictLongRunning")
         Log.d("VideoRepository", "REQUEST BODY: $requestJson")
+
+        currentDebugInfo = VeoDebugInfo(
+            userPrompt = prompt,
+            finalPrompt = finalVideoPrompt,
+            selectedModel = model.name,
+            actualApiModel = model.modelTag,
+            aspectRatio = validAspectRatio,
+            duration = "${validDuration}s",
+            resolution = validResolution,
+            operationId = "Pending...",
+            generationStatus = "Submitting request",
+            downloadStatus = "Pending"
+        )
+        onDebugUpdate?.invoke(currentDebugInfo)
 
         onProgress(0.08f, "Submitting video generation request to ${model.name}...")
 
@@ -400,18 +429,31 @@ class VideoRepository(private val context: Context) {
         } catch (e: retrofit2.HttpException) {
             val errBody = e.response()?.errorBody()?.string() ?: e.message()
             Log.e("VideoRepository", "Veo API HTTP Error: ${e.code()} - $errBody")
+            currentDebugInfo = currentDebugInfo.copy(generationStatus = "Failed: ${e.code()} - $errBody")
+            onDebugUpdate?.invoke(currentDebugInfo)
             throw IllegalStateException("Google Veo Request Failed (${e.code()}): $errBody")
         } catch (e: Exception) {
             Log.e("VideoRepository", "Veo API Network Error: ${e.message}")
+            currentDebugInfo = currentDebugInfo.copy(generationStatus = "Failed: ${e.message}")
+            onDebugUpdate?.invoke(currentDebugInfo)
             throw IllegalStateException("Failed to connect to Google Veo API: ${e.localizedMessage}")
         }
 
         if (initialResponse.error != null) {
-            throw IllegalStateException("Google Veo Error (${initialResponse.error.code}): ${initialResponse.error.message ?: initialResponse.error.status}")
+            val errMsg = "Google Veo Error (${initialResponse.error.code}): ${initialResponse.error.message ?: initialResponse.error.status}"
+            currentDebugInfo = currentDebugInfo.copy(generationStatus = errMsg)
+            onDebugUpdate?.invoke(currentDebugInfo)
+            throw IllegalStateException(errMsg)
         }
 
         val operationName = initialResponse.name
         Log.d("VideoRepository", "OPERATION NAME: $operationName")
+
+        currentDebugInfo = currentDebugInfo.copy(
+            operationId = operationName ?: "None",
+            generationStatus = "Generating with Veo"
+        )
+        onDebugUpdate?.invoke(currentDebugInfo)
 
         if (operationName.isNullOrBlank() && initialResponse.done != true) {
             throw IllegalStateException("Google Veo did not return an operation job name.")
@@ -419,7 +461,7 @@ class VideoRepository(private val context: Context) {
 
         var completedResponse: VeoOperationResponse = initialResponse
 
-        // Asynchronous Polling Loop
+        // Asynchronous Polling Loop (Poll approximately every 8 seconds)
         if (initialResponse.done != true && !operationName.isNullOrBlank()) {
             val cleanOpName = if (operationName.startsWith("v1beta/")) {
                 operationName.removePrefix("v1beta/")
@@ -429,15 +471,20 @@ class VideoRepository(private val context: Context) {
 
             val startTime = System.currentTimeMillis()
             val maxWaitMillis = 240_000L // 4 minutes max timeout
-            val pollIntervalMillis = 4_000L // Poll every 4 seconds
+            val pollIntervalMillis = 8_000L // Poll every 8 seconds per PART H
 
             while (true) {
                 delay(pollIntervalMillis)
                 val elapsedSec = (System.currentTimeMillis() - startTime) / 1000
 
-                // Progress advances from 0.15f to 0.85f based on elapsed time
-                val progress = 0.15f + minOf(0.70f, (elapsedSec.toFloat() / 85f) * 0.70f)
-                onProgress(progress, "Google Veo generating cinematic video... (${elapsedSec}s)")
+                // 10-80% progress while generating with Veo
+                val progress = 0.10f + minOf(0.70f, (elapsedSec.toFloat() / 70f) * 0.70f)
+                onProgress(progress, "Generating with Veo... (${elapsedSec}s)")
+
+                currentDebugInfo = currentDebugInfo.copy(
+                    generationStatus = "Generating with Veo (${elapsedSec}s elapsed)"
+                )
+                onDebugUpdate?.invoke(currentDebugInfo)
 
                 val pollResult = try {
                     RetrofitClient.geminiService.getOperation(cleanOpName, apiKey)
@@ -454,22 +501,33 @@ class VideoRepository(private val context: Context) {
                     Log.d("VideoRepository", "OPERATION STATUS: done=${pollResult.done}")
 
                     if (pollResult.error != null) {
-                        throw IllegalStateException("Google Veo Generation Failed (${pollResult.error.code}): ${pollResult.error.message ?: pollResult.error.status}")
+                        val errMsg = "Google Veo Generation Failed (${pollResult.error.code}): ${pollResult.error.message ?: pollResult.error.status}"
+                        currentDebugInfo = currentDebugInfo.copy(generationStatus = errMsg)
+                        onDebugUpdate?.invoke(currentDebugInfo)
+                        throw IllegalStateException(errMsg)
                     }
 
                     if (pollResult.done == true) {
                         completedResponse = pollResult
+                        currentDebugInfo = currentDebugInfo.copy(generationStatus = "Done")
+                        onDebugUpdate?.invoke(currentDebugInfo)
                         break
                     }
                 }
 
                 if (System.currentTimeMillis() - startTime > maxWaitMillis) {
-                    throw IllegalStateException("Google Veo generation timed out after ${elapsedSec}s. Please try again.")
+                    val timeoutMsg = "Google Veo generation timed out after ${elapsedSec}s. Please try again."
+                    currentDebugInfo = currentDebugInfo.copy(generationStatus = timeoutMsg)
+                    onDebugUpdate?.invoke(currentDebugInfo)
+                    throw IllegalStateException(timeoutMsg)
                 }
             }
         }
 
-        onProgress(0.86f, "Video generated by Veo! Preparing download...")
+        // 80-90%: Preparing video
+        onProgress(0.85f, "Preparing video...")
+        currentDebugInfo = currentDebugInfo.copy(downloadStatus = "Extracting video URI")
+        onDebugUpdate?.invoke(currentDebugInfo)
 
         val videoUri = completedResponse.extractVideoUri()
         val base64Bytes = completedResponse.extractVideoBase64()
@@ -479,7 +537,10 @@ class VideoRepository(private val context: Context) {
         }
 
         Log.d("VideoRepository", "VIDEO DOWNLOAD STARTED: ${videoUri ?: "Base64 bytes"}")
-        onProgress(0.88f, "Downloading generated video file from Google Cloud...")
+        // 90-100%: Downloading video
+        onProgress(0.92f, "Downloading video from Google Cloud...")
+        currentDebugInfo = currentDebugInfo.copy(downloadStatus = "Downloading from cloud...")
+        onDebugUpdate?.invoke(currentDebugInfo)
 
         if (!base64Bytes.isNullOrBlank()) {
             val bytes = Base64.decode(base64Bytes, Base64.DEFAULT)
@@ -489,7 +550,10 @@ class VideoRepository(private val context: Context) {
         }
 
         Log.d("VideoRepository", "VIDEO DOWNLOAD COMPLETED: ${videoFile.length()} bytes saved to ${videoFile.name}")
-        onProgress(0.96f, "Processing video metadata & preview frame...")
+        currentDebugInfo = currentDebugInfo.copy(downloadStatus = "Completed (${videoFile.length() / 1024} KB)")
+        onDebugUpdate?.invoke(currentDebugInfo)
+
+        onProgress(0.98f, "Processing video metadata & preview frame...")
 
         // Extract real frame from the downloaded MP4 file using MediaMetadataRetriever
         try {
@@ -546,6 +610,7 @@ class VideoRepository(private val context: Context) {
 
         val request = Request.Builder()
             .url(finalUrl)
+            .addHeader("x-goog-api-key", apiKey)
             .build()
 
         val response = RetrofitClient.okHttpClient.newCall(request).execute()
